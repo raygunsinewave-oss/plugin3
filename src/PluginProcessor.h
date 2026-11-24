@@ -10,6 +10,7 @@
 #include "state/Assets.h"
 #include "state/GlobalSettings.h"
 #include "state/MidiLearn.h"
+#include "state/PresetManager.h"
 #include "state/Tuning.h"
 
 namespace mbx
@@ -111,6 +112,7 @@ public:
     Meter& getOutputMeter() noexcept { return outMeter; }
     MidiLearn& getMidiLearn() noexcept override { return midiLearn; }
     Tuning& getTuning() noexcept { return tuning; }
+    PresetManager& getPresets() noexcept { return presets; }
     Meter& getInputMeter() noexcept { return inMeter; }
     bool isSidechainActive() const noexcept { return sidechainActive.load (std::memory_order_relaxed); }
     int getSeqStep() const noexcept { return seqStep.load (std::memory_order_relaxed); }
@@ -144,6 +146,7 @@ private:
     const dsp::WavetableBank& wavetables = factoryWavetables();
     FxRack fxRack { apvts };
     MidiLearn midiLearn { *this };
+    PresetManager presets { *this, apvts, assets };
     Tuning tuning;
     std::atomic<float>* dcBlockParam = nullptr;
     float dcStateL = 0.0f, dcStateR = 0.0f, dcPrevL = 0.0f, dcPrevR = 0.0f;

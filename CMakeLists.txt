@@ -27,7 +27,8 @@ endif()
 # ---------------------------------------------------------------- Embedded resources
 juce_add_binary_data(MysteryBoxData SOURCES
     resources/fonts/Orbitron.ttf
-    resources/fonts/JetBrainsMono-Regular.ttf)
+    resources/fonts/JetBrainsMono-Regular.ttf
+    resources/factory_presets.json)
 
 # ---------------------------------------------------------------- Plugin
 set(MYSTERYBOX_FORMATS VST3 Standalone)
@@ -60,8 +61,10 @@ set(MYSTERYBOX_SOURCES
     src/ui/FxPage.cpp
     src/ui/Fonts.cpp
     src/ui/SystemPages.cpp
+    src/ui/PresetsPage.cpp
     src/params/Parameters.cpp
     src/state/Assets.cpp
+    src/state/PresetManager.cpp
     src/dsp/Effects.cpp
     src/fx/FxRack.cpp)
 
@@ -93,12 +96,15 @@ target_link_libraries(MysteryBox
 # ---------------------------------------------------------------- Tests
 if(MYSTERYBOX_BUILD_TESTS)
     juce_add_console_app(MysteryBoxTests PRODUCT_NAME "MysteryBoxTests")
-    target_sources(MysteryBoxTests PRIVATE tests/TestMain.cpp tests/DspTests.cpp tests/ProcessorTests.cpp ${MYSTERYBOX_SOURCES})
+    target_sources(MysteryBoxTests PRIVATE tests/TestMain.cpp tests/DspTests.cpp tests/ProcessorTests.cpp tests/PresetTests.cpp ${MYSTERYBOX_SOURCES})
     target_compile_definitions(MysteryBoxTests PRIVATE ${MYSTERYBOX_DEFINITIONS})
     target_link_libraries(MysteryBoxTests
         PRIVATE ${MYSTERYBOX_MODULES}
                 juce::juce_recommended_config_flags
                 juce::juce_recommended_warning_flags)
+    if(MSVC)
+        target_link_options(MysteryBoxTests PRIVATE /STACK:16777216)
+    endif()
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(MysteryBoxTests PRIVATE -Wno-format-zero-length -Wno-format-security)
     endif()

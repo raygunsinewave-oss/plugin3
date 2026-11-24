@@ -370,6 +370,7 @@ void MysteryBoxProcessor::getStateInformation (juce::MemoryBlock& destData)
     tun.setProperty ("scl", tuning.getScl(), nullptr);
     tun.setProperty ("kbm", tuning.getKbm(), nullptr);
     state.appendChild (tun, nullptr);
+    state.setProperty ("presetName", presets.getCurrentName(), nullptr);
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -395,6 +396,7 @@ void MysteryBoxProcessor::setStateInformation (const void* data, int sizeInBytes
                 else tuning.reset();
                 tree.removeChild (child, nullptr);
             }
+            presets.setCurrentName (tree.getProperty ("presetName", "INIT").toString());
             apvts.replaceState (tree);
             if (juce::MessageManager::existsAndIsCurrentThread())
                 fxRack.syncUnits();

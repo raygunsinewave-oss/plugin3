@@ -156,6 +156,16 @@ juce::String Assets::loadSample (int osc, const juce::File& file)
     return {};
 }
 
+juce::String Assets::serialisePattern (const dsp::SeqPattern& pat)
+{
+    juce::StringArray steps;
+    for (const auto& st : pat.steps)
+        steps.add (juce::String ((int) st.on) + "," + juce::String (st.pitch, 2) + "," + juce::String (st.velocity, 3) + ","
+                   + juce::String (st.gate, 3) + "," + juce::String (st.probability, 3) + "," + juce::String (st.ratchet) + ","
+                   + juce::String ((int) st.slide) + "," + juce::String (st.mod1, 3) + "," + juce::String (st.mod2, 3));
+    return steps.joinIntoString (";");
+}
+
 juce::ValueTree Assets::toValueTree() const
 {
     juce::ValueTree t (kTreeType);
@@ -164,15 +174,7 @@ juce::ValueTree Assets::toValueTree() const
         t.setProperty ("lfo" + juce::String (l + 1) + "_custom", ShapeStore::serialise (shapes.get (ShapeStore::lfoIndex (l))), nullptr);
     for (int m = 0; m < dsp::kNumMacros; ++m)
         t.setProperty ("macro" + juce::String (m + 1) + "_name", getMacroName (m), nullptr);
-    {
-        const auto pat = sequence.get();
-        juce::StringArray steps;
-        for (const auto& st : pat.steps)
-            steps.add (juce::String ((int) st.on) + "," + juce::String (st.pitch, 2) + "," + juce::String (st.velocity, 3) + ","
-                       + juce::String (st.gate, 3) + "," + juce::String (st.probability, 3) + "," + juce::String (st.ratchet) + ","
-                       + juce::String ((int) st.slide) + "," + juce::String (st.mod1, 3) + "," + juce::String (st.mod2, 3));
-        t.setProperty ("seq_pattern", steps.joinIntoString (";"), nullptr);
-    }
+    t.setProperty ("seq_pattern", serialisePattern (sequence.get()), nullptr);
     for (int o = 0; o < dsp::kNumOscillators; ++o)
     {
         const auto wtSource = userTables[(size_t) o].getSourcePath();

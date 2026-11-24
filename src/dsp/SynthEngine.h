@@ -664,6 +664,10 @@ public:
             voices[(size_t) i].prepare (bank, (uint32_t) i + 1u, maxSr);
         setSampleRate (newSampleRate);
         allSoundOff();
+        perf = PerformanceState {}; // deterministic restart: LFO phases, controllers
+        bendTarget = 0.0f;
+        hostPpq = -1.0;
+        hasCurrent = false;
     }
 
     void setSampleRate (float newSampleRate) noexcept { sampleRate = std::max (1000.0f, newSampleRate); }

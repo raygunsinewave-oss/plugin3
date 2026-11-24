@@ -102,6 +102,16 @@ TopBar::TopBar (MysteryBoxProcessor& p) : proc (p), miniScope (p.getScope(), tru
     addAndMakeVisible (undoButton);
     addAndMakeVisible (redoButton);
     addAndMakeVisible (miniScope);
+    prevPreset.onClick = [this] { proc.getPresets().stepBrowser (-1); proc.getFxRack().syncUnits(); repaint(); };
+    nextPreset.onClick = [this] { proc.getPresets().stepBrowser (1); proc.getFxRack().syncUnits(); repaint(); };
+    abButton.onClick = [this] { proc.getPresets().toggleAB(); proc.getFxRack().syncUnits(); repaint(); };
+    savePreset.onClick = [this] { if (onTab) onTab (1); };
+    prevPreset.setTooltip ("Previous preset (in the browser's current list)");
+    nextPreset.setTooltip ("Next preset");
+    abButton.setTooltip ("A/B compare: toggles between two independent snapshots of the patch");
+    savePreset.setTooltip ("Save as a user preset");
+    for (auto* b : { &prevPreset, &nextPreset, &abButton, &savePreset })
+        addAndMakeVisible (b);
     tabs[0].setToggleState (true, juce::dontSendNotification);
     startTimerHz (GlobalSettings::get().fps (30));
 }
@@ -115,6 +125,16 @@ void TopBar::resized()
     for (int i = 0; i < 6; ++i)
         tabs[(size_t) i].setBounds (x0 + i * (tabW + gap), 11, tabW, 30);
     miniScope.setBounds (1120, 9, 96, 28);
+    prevPreset.setBounds (962, 30, 22, 16);
+    abButton.setBounds (988, 30, 46, 16);
+    savePreset.setBounds (1038, 30, 46, 16);
+    nextPreset.setBounds (1088, 30, 22, 16);
+}
+
+void TopBar::mouseUp (const juce::MouseEvent& e)
+{
+    if (juce::Rectangle<int> (960, 9, 150, 20).contains (e.getPosition()) && onTab)
+        onTab (1); // click the preset name to open the browser
 }
 
 void TopBar::timerCallback()
@@ -158,12 +178,12 @@ void TopBar::paint (juce::Graphics& g)
     g.fillPath (chamferedRect (preset, 6.0f));
     g.setColour (colours::cyan.withAlpha (0.5f));
     g.strokePath (chamferedRect (preset, 6.0f), juce::PathStrokeType (1.0f));
-    g.setFont (fonts::mono (8.5f));
-    g.setColour (colours::textDim);
-    g.drawText ("PATCH // 000", preset.reduced (8.0f, 3.0f), juce::Justification::topLeft);
-    g.setFont (fonts::mono (14.0f));
+    g.setFont (fonts::mono (12.0f));
     g.setColour (colours::cyan);
-    g.drawText ("<  INIT  >", preset.reduced (8.0f, 2.0f), juce::Justification::centredBottom);
+    g.drawText (proc.getPresets().getCurrentName().toUpperCase(), juce::Rectangle<float> (964.0f, 10.0f, 142.0f, 18.0f), juce::Justification::centred, true);
+    g.setFont (fonts::mono (8.0f));
+    g.setColour (colours::textDim);
+    g.drawText (proc.getPresets().getActiveAB() == 0 ? "A" : "B", juce::Rectangle<float> (964.0f, 10.0f, 10.0f, 10.0f), juce::Justification::topLeft);
 
     g.setColour (colours::cyan);
     g.fillRect (0.0f, r.getBottom() - 1.0f, r.getWidth(), 1.0f);
@@ -263,9 +283,7 @@ struct MysteryBoxEditor::Ui
 {
     explicit Ui (MysteryBoxProcessor& p)
         : topBar (p), statusBar (p), synthPage (p), fxPage (p), slimMeter (p.getOutputMeter(), true), advancedPage (p), settingsPage (p),
-          presetsPage ("PRESETS", "Arrives in Phase 5",
-                       { "Browser with search, tags, favourites, ratings, recently used", "Random preset + audio preview",
-                         "1,000 factory presets across 10 categories", "User save / tag / export (JSON)" }),
+          presetsPage (p),
           xdPage ("XD // GAMES", "Arrives in Phase 6",
                   { "25 original games that play the synth", "Tempo sync, scale & key lock, quantize, high scores",
                     "Game outputs as mod-matrix sources", "Performance (auto-play) mode as a generative sequencer" })
@@ -280,7 +298,8 @@ struct MysteryBoxEditor::Ui
     ui::StereoMeter slimMeter;
     ui::AdvancedPage advancedPage;
     ui::SettingsPage settingsPage;
-    PlannedPage presetsPage, xdPage;
+    ui::PresetsPage presetsPage;
+    PlannedPage xdPage;
 };
 
 MysteryBoxEditor::MysteryBoxEditor (MysteryBoxProcessor& p)
@@ -349,6 +368,7 @@ void MysteryBoxEditor::buildUi()
         applyGpu();
         showTab (5);
     };
+    u.presetsPage.onPresetLoaded = [this] { uiParts->topBar.repaint(); };
     u.settingsPage.onScaleChanged = [this] (int pct) { setSize (kBaseWidth * pct / 100, kBaseHeight * pct / 100); };
 
     tooltips.reset();

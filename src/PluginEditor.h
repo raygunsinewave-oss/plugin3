@@ -5,6 +5,7 @@
 
 #include "ui/FxPage.h"
 #include "ui/SystemPages.h"
+#include "ui/PresetsPage.h"
 #include "ui/Sections.h"
 
 namespace mbx
@@ -50,7 +51,9 @@ public:
 
     std::array<juce::TextButton, 6> tabs;
     juce::TextButton undoButton { "UNDO" }, redoButton { "REDO" };
+    juce::TextButton prevPreset { "<" }, nextPreset { ">" }, abButton { "A/B" }, savePreset { "SAVE" };
     std::function<void (int)> onTab;
+    void mouseUp (const juce::MouseEvent& e) override;
 
 private:
     void timerCallback() override;

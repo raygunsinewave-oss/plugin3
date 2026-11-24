@@ -57,7 +57,8 @@ MBX_TEST (processor_renders_audio_at_every_oversampling_factor)
 {
     for (int os = 0; os < 4; ++os)
     {
-        MysteryBoxProcessor p;
+        auto pPtr = std::make_unique<MysteryBoxProcessor>(); // heap: the processor is several MB
+        auto& p = *pPtr;
         setParam (p, params::id::oversampling, (float) os);
         p.prepareToPlay (48000.0, 512);
         const auto r = renderNote (p, 40, 512);
@@ -70,7 +71,8 @@ MBX_TEST (processor_renders_audio_at_every_oversampling_factor)
 
 MBX_TEST (note_on_is_sample_accurate)
 {
-    MysteryBoxProcessor p;
+    auto pPtr = std::make_unique<MysteryBoxProcessor>(); // heap: the processor is several MB
+    auto& p = *pPtr;
     setParam (p, params::id::oversampling, 0.0f);
     setParam (p, params::id::env1Attack, 0.0f);
     p.prepareToPlay (48000.0, 512);
@@ -86,7 +88,8 @@ MBX_TEST (note_on_is_sample_accurate)
 
 MBX_TEST (state_round_trips_every_parameter)
 {
-    MysteryBoxProcessor a;
+    auto aPtr = std::make_unique<MysteryBoxProcessor>(); // heap: the processor is several MB
+    auto& a = *aPtr;
     juce::Random rng (99);
     for (auto* param : a.getParameters())
         param->setValueNotifyingHost (rng.nextFloat());
@@ -94,7 +97,9 @@ MBX_TEST (state_round_trips_every_parameter)
     juce::MemoryBlock blob;
     a.getStateInformation (blob);
 
-    MysteryBoxProcessor b;
+    auto bPtr = std::make_unique<MysteryBoxProcessor>(); // heap: the processor is several MB
+
+    auto& b = *bPtr;
     b.setStateInformation (blob.getData(), (int) blob.getSize());
 
     const auto pa = a.getParameters(), pb = b.getParameters();
@@ -112,7 +117,8 @@ MBX_TEST (state_round_trips_every_parameter)
 
 MBX_TEST (process_block_is_allocation_free)
 {
-    MysteryBoxProcessor p;
+    auto pPtr = std::make_unique<MysteryBoxProcessor>(); // heap: the processor is several MB
+    auto& p = *pPtr;
     setParam (p, params::oscId (0, params::id::oscUnison), 16.0f);
     setParam (p, params::oscId (1, params::id::oscOn), 1.0f);
     setParam (p, params::oscId (1, params::id::oscType), 0.0f); // wavetable
@@ -145,7 +151,8 @@ MBX_TEST (process_block_is_allocation_free)
 MBX_TEST (cpu_budget_six_osc_eight_voices)
 {
     // Quality bar: 6 oscillators, 8 voices, 48 kHz, 2x oversampling < 5% of one core.
-    MysteryBoxProcessor p;
+    auto pPtr = std::make_unique<MysteryBoxProcessor>(); // heap: the processor is several MB
+    auto& p = *pPtr;
     for (int o = 0; o < params::kNumOscs; ++o)
     {
         setParam (p, params::oscId (o, params::id::oscOn), 1.0f);
@@ -187,7 +194,8 @@ int renderDemo (const juce::File& file)
 {
     constexpr double sr = 48000.0;
     constexpr int block = 256;
-    MysteryBoxProcessor p;
+    auto pPtr = std::make_unique<MysteryBoxProcessor>(); // heap: the processor is several MB
+    auto& p = *pPtr;
     setParam (p, params::id::oversampling, 1.0f);
     setParam (p, params::id::masterVolume, -9.0f);
     p.prepareToPlay (sr, block);
@@ -408,7 +416,8 @@ namespace mbx::test
 /** Renders the editor (after playing a chord so the scope has signal) to a PNG at 2x. */
 int screenshot (const juce::File& file, int tab, int osc, const juce::String& modTab)
 {
-    MysteryBoxProcessor p;
+    auto pPtr = std::make_unique<MysteryBoxProcessor>(); // heap: the processor is several MB
+    auto& p = *pPtr;
     setParam (p, params::oscId (0, params::id::oscType), 0.0f);
     setParam (p, params::oscId (0, params::id::oscTable), 3.0f);
     setParam (p, params::oscId (0, params::id::oscWtPos), 0.4f);
@@ -469,7 +478,8 @@ int screenshot (const juce::File& file, int tab, int osc, const juce::String& mo
 
 MBX_TEST (state_round_trips_assets)
 {
-    MysteryBoxProcessor a;
+    auto aPtr = std::make_unique<MysteryBoxProcessor>(); // heap: the processor is several MB
+    auto& a = *aPtr;
     auto shape = dsp::Shape::make ({ { 0, 0.2f, 0 }, { 0.3f, 0.9f, 0.4f }, { 1, 0.1f, -0.3f } });
     a.getAssets().shapes.set (ShapeStore::kMsegIndex, shape);
     a.getAssets().setMacroName (2, "Brightness");
@@ -477,7 +487,9 @@ MBX_TEST (state_round_trips_assets)
     juce::MemoryBlock blob;
     a.getStateInformation (blob);
 
-    MysteryBoxProcessor b;
+    auto bPtr = std::make_unique<MysteryBoxProcessor>(); // heap: the processor is several MB
+
+    auto& b = *bPtr;
     b.setStateInformation (blob.getData(), (int) blob.getSize());
     const auto got = b.getAssets().shapes.get (ShapeStore::kMsegIndex);
     MBX_CHECK (got.numPoints == 3 && std::abs (got.points[1].y - 0.9f) < 1e-3f && std::abs (got.points[1].curve - 0.4f) < 1e-3f);
@@ -487,7 +499,8 @@ MBX_TEST (state_round_trips_assets)
 
 MBX_TEST (phase2_processor_is_allocation_free_with_everything_on)
 {
-    MysteryBoxProcessor p;
+    auto pPtr = std::make_unique<MysteryBoxProcessor>(); // heap: the processor is several MB
+    auto& p = *pPtr;
     for (int o = 0; o < 6; ++o)
     {
         setParam (p, params::oscId (o, params::id::oscOn), 1.0f);
@@ -586,7 +599,8 @@ MBX_TEST (limiter_holds_its_ceiling)
 
 MBX_TEST (fx_rack_with_every_slot_is_allocation_free)
 {
-    MysteryBoxProcessor p;
+    auto pPtr = std::make_unique<MysteryBoxProcessor>(); // heap: the processor is several MB
+    auto& p = *pPtr;
     for (int k = 0; k < params::kNumFxSlots + 2; ++k)
     {
         setParam (p, params::fxId (k, params::id::fxType), (float) (1 + (k * 2) % ((int) dsp::fx::FxType::Count - 1)));

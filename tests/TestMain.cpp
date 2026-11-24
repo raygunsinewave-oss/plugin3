@@ -29,6 +29,7 @@ namespace mbx::test
 {
 int renderDemo (const juce::File& file);                 // ProcessorTests.cpp
 int screenshot (const juce::File& file, int tab, int osc, const juce::String& modTab); // ProcessorTests.cpp
+int levelPresets (const juce::File& bundle);                                          // PresetTests.cpp
 }
 
 int main (int argc, char** argv)
@@ -37,6 +38,9 @@ int main (int argc, char** argv)
 
     if (argc >= 3 && std::string (argv[1]) == "--render")
         return mbx::test::renderDemo (juce::File::getCurrentWorkingDirectory().getChildFile (argv[2]));
+
+    if (argc >= 3 && std::string (argv[1]) == "--level-presets")
+        return mbx::test::levelPresets (juce::File::getCurrentWorkingDirectory().getChildFile (argv[2]));
 
     if (argc >= 3 && std::string (argv[1]) == "--screenshot")
         return mbx::test::screenshot (juce::File::getCurrentWorkingDirectory().getChildFile (argv[2]),

@@ -172,6 +172,7 @@ public:
     void fromValueTree (const juce::ValueTree& tree);
 
     static constexpr const char* kTreeType = "MBX_ASSETS";
+    static juce::String serialisePattern (const dsp::SeqPattern& pat);
 
 private:
     void timerCallback() override;
