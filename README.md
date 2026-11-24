@@ -5,8 +5,14 @@ Windows 10/11 x64 and macOS 12+ (Universal), built with JUCE 8 / C++20 / CMake.
 
 ![SYNTH tab](docs/media/phase2-synth-tab.png)
 
-> **Status: Phase 2 of 7 complete.** See [docs/ROADMAP.md](docs/ROADMAP.md) for what works now
-> and what is next. Rendered demos: [phase 1](docs/media/phase1-demo.wav), [phase 2](docs/media/phase2-demo.wav).
+> **Status: v1.0, all 7 build phases complete.**
+> - [User manual](docs/MANUAL.md)
+> - [Roadmap / feature list](docs/ROADMAP.md)
+> - [Release test plan](docs/TESTING.md)
+> - Demos: [phase 1](docs/media/phase1-demo.wav), [phase 2](docs/media/phase2-demo.wav)
+>
+> Pre-built macOS (Universal `.pkg`) and Windows (`Setup.exe`) installers are attached to each
+> tagged GitHub Release; every CI run also uploads them as artifacts.
 
 ## Building
 
@@ -56,6 +62,30 @@ cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 ```bash
 cmake --build build
 ```
+
+## Factory presets
+
+```bash
+python3 tools/generate_presets.py
+```
+
+```bash
+build/MysteryBoxTests_artefacts/Release/MysteryBoxTests --level-presets resources/factory_presets.json
+```
+
+```bash
+python3 tools/split_bundle.py
+```
+
+## Releases
+
+Push a tag such as `v1.0.0`. CI builds, validates, and publishes a GitHub Release with the
+installers.
+
+For a signed and notarized macOS package, add these repository secrets: `MACOS_CERT_P12`
+(base64), `MACOS_CERT_PASSWORD`, `MACOS_APP_ID` ("Developer ID Application: …"),
+`MACOS_INSTALLER_ID` ("Developer ID Installer: …"), `APPLE_ID`, `APPLE_TEAM_ID`, and
+`APPLE_APP_PASSWORD`.
 
 ## Tests
 

@@ -68,30 +68,37 @@ Verified:
 Deferred to Phase 4 (UI pass): drag-and-drop modulation from source icons, MIDI Learn, and the MPE zone editor.
 Granular uses a file path, so a moved sample must be re-located; embedding samples comes with the preset system.
 
-## Phase 3: FX, arp/seq, metering
-- FX rack: 10 reorderable slots, the full effects list, and send buses A/B.
-- Arpeggiator, plus a 16–64 step sequencer with modulation lanes.
-- Meters: peak, RMS and LUFS, true-peak, and peak hold.
-- Visualisers: spectrum analyser, goniometer and correlation meter.
+## Phase 3: FX, arp/seq, metering (DONE)
+- 19 effects in 10 reorderable slots, plus send buses A/B; master 6-band EQ with analyser; output limiter.
+- Arpeggiator (6 patterns) and a 1–64 step sequencer (pitch, velocity, gate, probability, ratchet, slide,
+  2 mod lanes).
+- Meters: peak, RMS, LUFS (M/S), true peak, clip; goniometer and correlation; slim always-on meters;
+  sidechain input meter.
 
-## Phase 4: full UI
-- Complete UI layout for every tab, with embedded OFL display and mono fonts.
-- GPU rendering: OpenGL on Windows, Metal-backed on macOS.
-- Drag-and-drop modulation and MIDI Learn.
-- Settings: themes (including a colorblind-safe palette), Eco mode, and keyboard navigation.
+## Phase 4: full UI (DONE)
+- Themes: Neon Cyan, Magenta Night, Acid Green, Mono, Colorblind Safe.
+- Embedded OFL fonts; optional OpenGL; UI scale 75–200%; Eco animation mode.
+- ADVANCED tab: drift, per-voice random, steal modes, mod smoothing, velocity/keytrack curves, DC blocker,
+  saturation models, Scala microtuning, searchable parameter browser with MIDI CC learn.
+- Drag-and-drop modulation chips, keyboard navigation, computer-keyboard playing.
 
-## Phase 5: presets
-- Preset browser with search, tags, favourites, ratings, recently used, random, and audio preview.
-- JSON preset format.
-- A generator script plus hand-designed hero presets, building to 1,000 factory presets, level-matched to -6 dBFS.
+## Phase 5: presets (DONE)
+- JSON preset format, a browser (search, tags, favourites, ratings, recents, preview, A/B, import/export).
+- 1,000 generated, level-matched factory presets with meaningful macros and style tags (no artist names).
 
-## Phase 6: XD games
-- Game engine (tempo sync, scale lock, quantize, mod outputs, high scores, performance mode).
-- 25 original games.
+## Phase 6: XD games (DONE)
+- Framework: scale/key lock, quantize, tempo sync, sound target, 4 Mod Out sources, high scores.
+- 25 original games, each with a performance-mode AI.
 
-## Phase 7: ship
-- Profiling and SIMD.
-- DAW recall testing in Live, FL Studio, Logic, Bitwig, Cubase, Reaper and Studio One.
-- Installers: Inno Setup .exe for Windows; signed and notarized .pkg for macOS. The macOS installer needs
-  your Apple Developer ID.
-- User manual.
+## Phase 7: ship (DONE)
+- Profiling and optimisation: ~4.3% of one core for 6 osc × 8 voices at 48 kHz / 2×.
+- Sanitizer CI; pluginval strictness 10 on all platforms; auval.
+- Installers (`.pkg`, Inno Setup); optional signing and notarization; tagged GitHub Releases.
+- User manual and release test plan.
+
+Still requires you or your hardware:
+- Apple Developer ID signing and notarization (add the secrets).
+- A JUCE commercial licence before selling.
+- The manual DAW recall pass in [TESTING.md](TESTING.md).
+- An Apple Silicon CI runner if your GitHub plan provides one (the Intel runner already builds the
+  Universal binary).

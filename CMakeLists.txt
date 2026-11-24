@@ -3,13 +3,14 @@ cmake_minimum_required(VERSION 3.22)
 # Must be set before project() to take effect.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
 
-project(MysteryBox VERSION 0.3.0 LANGUAGES C CXX)
+project(MysteryBox VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(MYSTERYBOX_BUILD_TESTS "Build the DSP / processor unit tests" ON)
+option(MYSTERYBOX_SANITIZE "Build tests with AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
 set(MYSTERYBOX_JUCE_DIR "" CACHE PATH "Use a local JUCE 8 checkout instead of fetching one")
 
 # ---------------------------------------------------------------- JUCE
@@ -111,6 +112,11 @@ if(MYSTERYBOX_BUILD_TESTS)
     endif()
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(MysteryBoxTests PRIVATE -Wno-format-zero-length -Wno-format-security)
+    endif()
+    if(MYSTERYBOX_SANITIZE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(MysteryBoxTests PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined)
+        target_link_options(MysteryBoxTests PRIVATE -fsanitize=address,undefined)
+        target_compile_definitions(MysteryBoxTests PRIVATE MBX_SANITIZE=1)
     endif()
     enable_testing()
     add_test(NAME MysteryBoxTests COMMAND MysteryBoxTests)

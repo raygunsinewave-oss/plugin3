@@ -11,6 +11,9 @@
 #include "TestHarness.h"
 
 // ---- global allocation tracking (only counts while a test enables it) ----
+// Not compiled into sanitizer builds: ASan supplies its own allocator, and the zero-allocation
+// checks are enforced by the regular (non-sanitized) test runs on every platform.
+#ifndef MBX_SANITIZE
 void* operator new (std::size_t size)
 {
     if (mbx::test::tracking.load (std::memory_order_relaxed))
@@ -24,6 +27,7 @@ void operator delete (void* p) noexcept { std::free (p); }
 void operator delete[] (void* p) noexcept { std::free (p); }
 void operator delete (void* p, std::size_t) noexcept { std::free (p); }
 void operator delete[] (void* p, std::size_t) noexcept { std::free (p); }
+#endif
 
 namespace mbx::test
 {
