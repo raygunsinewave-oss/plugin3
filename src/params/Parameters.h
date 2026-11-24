@@ -9,11 +9,15 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "../dsp/SynthEngine.h"
+#include "../dsp/FxCommon.h"
 
 namespace mbx::params
 {
 inline constexpr int kVersionPhase1 = 1;
 inline constexpr int kVersionPhase2 = 2;
+inline constexpr int kVersionPhase3 = 3;
+inline constexpr int kNumFxSlots    = 10; // rack slots; plus send buses A and B
+inline constexpr int kNumEqBands    = 6;
 inline constexpr int kNumOscs       = dsp::kNumOscillators;
 
 inline juce::String oscId (int oscIndex, const char* name)    { return "osc" + juce::String (oscIndex + 1) + "_" + name; }
@@ -22,6 +26,11 @@ inline juce::String lfoId (int lfoIndex, const char* name)    { return "lfo" + j
 inline juce::String modId (int slot, const char* name)        { return "mod" + juce::String (slot + 1) + "_" + name; }
 inline juce::String filterId (int f, const char* name)        { return "filter" + juce::String (f + 1) + "_" + name; }
 inline juce::String macroId (int m)                           { return "macro" + juce::String (m + 1); }
+/** FX slot 0..9 = rack "fx1".."fx10"; 10 = send A "fxA"; 11 = send B "fxB". */
+inline juce::String fxPrefix (int slot)                       { return slot < kNumFxSlots ? "fx" + juce::String (slot + 1) : (slot == kNumFxSlots ? "fxA" : "fxB"); }
+inline juce::String fxId (int slot, const char* name)         { return fxPrefix (slot) + "_" + name; }
+inline juce::String fxParamId (int slot, int k)               { return fxPrefix (slot) + "_p" + juce::String (k + 1); }
+inline juce::String eqId (int band, const char* name)         { return "eq" + juce::String (band + 1) + "_" + name; }
 
 namespace id
 {
@@ -71,6 +80,16 @@ namespace id
                                  *glideCurve = "glide_curve", *stackVoices = "stack_voices", *stackDetune = "stack_detune",
                                  *mpeOn = "mpe_on", *mpeBendRange = "mpe_bend_range";
 
+    // FX (Phase 3)
+    inline constexpr const char* fxType = "type", *fxOn = "on", *fxMix = "mix", *fxSend = "send";
+    inline constexpr const char* eqOn = "eq_on", *eqBandOn = "on", *eqFreq = "freq", *eqGain = "gain", *eqQ = "q";
+    inline constexpr const char* outLimiter = "out_limiter", *outCeiling = "out_ceiling";
+    // arp / sequencer (Phase 3)
+    inline constexpr const char* arpMode = "arp_mode", *arpPattern = "arp_pattern", *arpRate = "arp_rate", *arpGate = "arp_gate",
+                                 *arpSwing = "arp_swing", *arpOctaves = "arp_octaves", *arpHold = "arp_hold",
+                                 *arpRetrigger = "arp_retrigger", *seqLength = "seq_length", *seqRate = "seq_rate",
+                                 *seqSwing = "seq_swing", *seqFollow = "seq_follow", *midiOut = "midi_out";
+
     // global (Phase 1)
     inline constexpr const char* masterVolume = "master_volume", *polyphony = "polyphony", *bendRange = "bend_range",
                                  *oversampling = "oversampling";
@@ -96,6 +115,9 @@ const juce::StringArray& filterRoutingNames();
 const juce::StringArray& subShapeNames();
 const juce::StringArray& voiceModeNames();
 const juce::StringArray& glideModeNames();
+const juce::StringArray& fxTypeNames();
+const juce::StringArray& arpModeNames();
+const juce::StringArray& arpPatternNames();
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 

@@ -12,7 +12,7 @@ jobs:
       matrix:
         include:
           - name: macOS (Universal)
-            os: macos-14
+            os: macos-latest
             cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
             pluginval: https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip
           - name: Windows (x64)
@@ -47,8 +47,10 @@ jobs:
       - name: Unit tests
         shell: bash
         run: |
+          RUN=""
           if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; fi
-          BIN=$(find build -type f \( -name MysteryBoxTests -o -name MysteryBoxTests.exe \) | head -1)
+          BIN=$(ls build/MysteryBoxTests_artefacts/*/MysteryBoxTests build/MysteryBoxTests_artefacts/*/MysteryBoxTests.exe 2>/dev/null | head -1)
+          echo "Running $BIN"
           $RUN "$BIN"
 
       - name: pluginval (strictness 10)
@@ -56,24 +58,42 @@ jobs:
         run: |
           curl -sSL -o pluginval.zip "${{ matrix.pluginval }}"
           unzip -q pluginval.zip
-          VST3=$(find build -type d -name "Mystery Box.vst3" | head -1)
+          VST3=$(ls -d build/MysteryBox_artefacts/*/VST3/"Mystery Box.vst3" | head -1)
           case "$RUNNER_OS" in
             macOS)   PV=pluginval.app/Contents/MacOS/pluginval ;;
             Windows) PV=./pluginval.exe ;;
             *)       PV="xvfb-run -a ./pluginval" ;;
           esac
-          $PV --strictness-level 10 --validate-in-process --timeout-ms 600000 "$VST3"
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            AU=$(find build -type d -name "Mystery Box.component" | head -1)
-            mkdir -p ~/Library/Audio/Plug-Ins/Components && cp -R "$AU" ~/Library/Audio/Plug-Ins/Components/
-            killall -9 AudioComponentRegistrar || true
-            auval -v aumu MyBx Rygn
-          fi
+          $PV --strictness-level 10 --validate-in-process --timeout-ms 900000 "$VST3"
+
+      - name: auval (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          AU=$(ls -d build/MysteryBox_artefacts/Release/AU/"Mystery Box.component")
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "$AU" ~/Library/Audio/Plug-Ins/Components/
+          codesign --force --deep -s - ~/Library/Audio/Plug-Ins/Components/"Mystery Box.component"
+          killall -9 AudioComponentRegistrar || true
+          auval -v aumu MyBx Rygn
+
+      - name: Package (macOS .pkg + zip)
+        if: runner.os == 'macOS'
+        run: packaging/macos/build_pkg.sh build "$(grep -m1 'project(MysteryBox VERSION' CMakeLists.txt | sed -E 's/.*VERSION ([0-9.]+).*/\1/')"
+
+      - name: Package (Windows installer)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path CMakeLists.txt -Pattern 'project\(MysteryBox VERSION ([0-9.]+)').Matches[0].Groups[1].Value
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\iscc.exe" "/DVersion=$v" "/DArtefacts=$PWD\build\MysteryBox_artefacts\Release" "/O$PWD" packaging\windows\MysteryBox.iss
 
       - uses: actions/upload-artifact@v4
         with:
           name: MysteryBox-${{ runner.os }}
           path: |
-            build/**/Release/VST3
-            build/**/Release/AU
-            build/**/Release/Standalone
+            MysteryBox-*.pkg
+            MysteryBox-*.zip
+            MysteryBox-*-Setup.exe
+            build/MysteryBox_artefacts/Release/VST3
+            build/MysteryBox_artefacts/Release/Standalone
+          if-no-files-found: warn

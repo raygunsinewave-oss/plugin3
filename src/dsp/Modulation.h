@@ -24,6 +24,7 @@ enum class ModSource : int
     Velocity, Aftertouch, ModWheel, PitchBend, Keytrack, Random,
     Macro1, Macro2, Macro3, Macro4, Macro5, Macro6, Macro7, Macro8,
     MpePressure, MpeSlide, MpeGlide,
+    SeqLane1, SeqLane2,
     Count
 };
 
@@ -32,7 +33,8 @@ inline constexpr const char* kModSourceNames[] = {
     "LFO 1", "LFO 2", "LFO 3", "LFO 4", "LFO 5", "LFO 6",
     "Velocity", "Aftertouch", "Mod Wheel", "Pitch Bend", "Keytrack", "Random",
     "Macro 1", "Macro 2", "Macro 3", "Macro 4", "Macro 5", "Macro 6", "Macro 7", "Macro 8",
-    "MPE Pressure", "MPE Slide", "MPE Glide"
+    "MPE Pressure", "MPE Slide", "MPE Glide",
+    "Seq Lane 1", "Seq Lane 2"
 };
 static_assert (std::size (kModSourceNames) == (size_t) ModSource::Count);
 

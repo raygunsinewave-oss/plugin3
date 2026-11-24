@@ -35,6 +35,19 @@ const juce::StringArray& subShapeNames()     { static const juce::StringArray n 
 const juce::StringArray& voiceModeNames()    { static const juce::StringArray n { "Poly", "Mono", "Legato", "Unison" }; return n; }
 const juce::StringArray& glideModeNames()    { static const juce::StringArray n { "Always", "Legato Only" }; return n; }
 
+const juce::StringArray& fxTypeNames()
+{
+    static const juce::StringArray n = [] {
+        juce::StringArray s;
+        for (int t = 0; t < (int) dsp::fx::FxType::Count; ++t)
+            s.add (dsp::fx::fxInfo ((dsp::fx::FxType) t).name);
+        return s;
+    }();
+    return n;
+}
+const juce::StringArray& arpModeNames()    { static const juce::StringArray n { "Off", "Arpeggiator", "Sequencer" }; return n; }
+const juce::StringArray& arpPatternNames() { static const juce::StringArray n { "Up", "Down", "Up/Down", "Random", "As Played", "Chord" }; return n; }
+
 const juce::StringArray& tableNames()
 {
     static const juce::StringArray names = [] {
@@ -336,6 +349,71 @@ APVTS::ParameterLayout createLayout()
         b.real (id::stackDetune, "Unison Detune", { 0.0f, 100.0f, 0.1f }, 20.0f, juce::AudioParameterFloatAttributes().withLabel ("ct"));
         b.boolean (id::mpeOn, "MPE", false);
         b.integer (id::mpeBendRange, "MPE Bend Range", 1, 96, 48, "st");
+        layout.add (std::move (group));
+    }
+
+    // ---------------------------------------------------------------- FX rack + sends (Phase 3)
+    constexpr int v3 = kVersionPhase3;
+    for (int k = 0; k < kNumFxSlots + 2; ++k)
+    {
+        const bool send = k >= kNumFxSlots;
+        const auto name = send ? juce::String ("Send ") + (k == kNumFxSlots ? "A " : "B ") : "FX " + juce::String (k + 1) + " ";
+        auto group = std::make_unique<juce::AudioProcessorParameterGroup> (fxPrefix (k), name.trim().toUpperCase(), "|");
+        Builder b { *group, v3 };
+        const int defType = send ? (k == kNumFxSlots ? (int) dsp::fx::FxType::Reverb : (int) dsp::fx::FxType::Delay) : 0;
+        b.choice (fxId (k, id::fxType), name + "Type", fxTypeNames(), defType);
+        b.boolean (fxId (k, id::fxOn), name + "On", true);
+        b.unit (fxId (k, id::fxMix), name + (send ? "Return" : "Mix"), send ? 0.8f : 1.0f);
+        if (send)
+            b.unit (fxId (k, id::fxSend), name + "Send", 0.0f);
+        const auto& def = dsp::fx::fxInfo ((dsp::fx::FxType) defType).defaults;
+        for (int pnum = 0; pnum < dsp::fx::kParamsPerFx; ++pnum)
+            b.unit (fxParamId (k, pnum), name + "P" + juce::String (pnum + 1), defType != 0 ? def[(size_t) pnum] : 0.5f);
+        layout.add (std::move (group));
+    }
+
+    // ---------------------------------------------------------------- master EQ + output (Phase 3)
+    {
+        auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("mastereq", "MASTER EQ", "|");
+        Builder b { *group, v3 };
+        b.boolean (id::eqOn, "EQ On", true);
+        static constexpr float freqs[kNumEqBands] = { 80.0f, 250.0f, 800.0f, 2500.0f, 6000.0f, 12000.0f };
+        for (int band = 0; band < kNumEqBands; ++band)
+        {
+            const auto name = "EQ " + juce::String (band + 1) + " ";
+            b.boolean (eqId (band, id::eqBandOn), name + "On", true);
+            juce::NormalisableRange<float> fr (20.0f, 20000.0f, 0.01f);
+            fr.setSkewForCentre (632.0f);
+            b.real (eqId (band, id::eqFreq), name + "Freq", fr, freqs[band], hzAttr());
+            b.real (eqId (band, id::eqGain), name + "Gain", { -18.0f, 18.0f, 0.01f }, 0.0f,
+                    juce::AudioParameterFloatAttributes().withLabel ("dB").withStringFromValueFunction ([] (float v, int) {
+                        return (v > 0 ? "+" : "") + juce::String (v, 1) + " dB"; }));
+            juce::NormalisableRange<float> q (0.1f, 12.0f, 0.001f);
+            q.setSkewForCentre (1.0f);
+            b.real (eqId (band, id::eqQ), name + "Q", q, 0.8f);
+        }
+        b.boolean (id::outLimiter, "Output Limiter", true);
+        b.real (id::outCeiling, "Output Ceiling", { -12.0f, 0.0f, 0.01f }, -0.3f, juce::AudioParameterFloatAttributes().withLabel ("dB"));
+        layout.add (std::move (group));
+    }
+
+    // ---------------------------------------------------------------- arp / sequencer (Phase 3)
+    {
+        auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("arpseq", "ARP / SEQ", "|");
+        Builder b { *group, v3 };
+        b.choice (id::arpMode, "Arp/Seq Mode", arpModeNames(), 0);
+        b.choice (id::arpPattern, "Arp Pattern", arpPatternNames(), 0);
+        b.choice (id::arpRate, "Arp Rate", syncDivisionNames(), 5);
+        b.real (id::arpGate, "Arp Gate", { 0.05f, 1.0f }, 0.6f, percentAttr());
+        b.unit (id::arpSwing, "Arp Swing", 0.0f);
+        b.integer (id::arpOctaves, "Arp Octaves", 1, 4, 1);
+        b.boolean (id::arpHold, "Arp Hold", false);
+        b.boolean (id::arpRetrigger, "Arp Retrigger", true);
+        b.integer (id::seqLength, "Seq Length", 1, 64, 16);
+        b.choice (id::seqRate, "Seq Rate", syncDivisionNames(), 5);
+        b.unit (id::seqSwing, "Seq Swing", 0.0f);
+        b.boolean (id::seqFollow, "Seq Follow Key", true);
+        b.boolean (id::midiOut, "MIDI Out", false);
         layout.add (std::move (group));
     }
 

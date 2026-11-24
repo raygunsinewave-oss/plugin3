@@ -542,3 +542,151 @@ MBX_TEST (phase2_processor_is_allocation_free_with_everything_on)
     MBX_CHECK (allocs == 0, "processBlock allocated %ld times", allocs);
     MBX_CHECK (finite, "non-finite output");
 }
+
+//==============================================================================
+// Phase 3: FX rack, arp / sequencer, metering
+MBX_TEST (every_fx_type_is_finite_and_bounded)
+{
+    using namespace dsp::fx;
+    dsp::Rng rng (3);
+    std::vector<float> l (4096), r (4096), side (4096);
+    for (int t = 1; t < (int) FxType::Count; ++t)
+        for (int trial = 0; trial < 6; ++trial)
+        {
+            auto fx = createFx ((FxType) t);
+            MBX_CHECK (fx != nullptr, "type %d", t);
+            fx->prepare (48000.0f, 512);
+            FxParams p;
+            for (auto& v : p) v = trial == 0 ? 0.0f : trial == 1 ? 1.0f : rng.uniform();
+            FxContext ctx;
+            ctx.sideL = side.data();
+            ctx.sideR = side.data();
+            for (int i = 0; i < 4096; ++i) { l[(size_t) i] = rng.bipolar() * 0.5f; r[(size_t) i] = rng.bipolar() * 0.5f; side[(size_t) i] = rng.bipolar(); }
+            for (int pos = 0; pos < 4096; pos += 512)
+                fx->process (l.data() + pos, r.data() + pos, 512, p, ctx);
+            for (int i = 0; i < 4096; ++i)
+                MBX_CHECK (std::isfinite (l[(size_t) i]) && std::isfinite (r[(size_t) i]) && std::abs (l[(size_t) i]) < 40.0f,
+                           "%s trial %d -> %f", fxInfo ((FxType) t).name, trial, l[(size_t) i]);
+        }
+}
+
+MBX_TEST (limiter_holds_its_ceiling)
+{
+    auto fx = dsp::fx::createFx (dsp::fx::FxType::Limiter);
+    fx->prepare (48000.0f, 512);
+    std::vector<float> l (48000), r (48000);
+    for (size_t i = 0; i < l.size(); ++i) l[i] = r[i] = 1.8f * std::sin (0.05f * (float) i);
+    for (size_t pos = 0; pos < l.size(); pos += 512)
+        fx->process (l.data() + pos, r.data() + pos, (int) std::min<size_t> (512, l.size() - pos), { 0.0f, 0.75f, 0.3f, 0, 0, 0 }, {});
+    const float ceiling = dsp::dbToGain (-3.0f);
+    float peak = 0.0f;
+    for (float v : l) peak = std::max (peak, std::abs (v));
+    MBX_CHECK (peak <= ceiling + 1.0e-4f, "peak %.4f > ceiling %.4f", peak, ceiling);
+}
+
+MBX_TEST (fx_rack_with_every_slot_is_allocation_free)
+{
+    MysteryBoxProcessor p;
+    for (int k = 0; k < params::kNumFxSlots + 2; ++k)
+    {
+        setParam (p, params::fxId (k, params::id::fxType), (float) (1 + (k * 2) % ((int) dsp::fx::FxType::Count - 1)));
+        if (k >= params::kNumFxSlots)
+            setParam (p, params::fxId (k, params::id::fxSend), 0.5f);
+    }
+    setParam (p, params::id::arpMode, 1.0f);
+    setParam (p, params::id::arpOctaves, 3.0f);
+    p.prepareToPlay (48000.0, 256);
+    juce::AudioBuffer<float> buffer (2, 256);
+    juce::MidiBuffer midi;
+    midi.ensureSize (2048);
+    for (int warm = 0; warm < 4; ++warm)
+        p.processBlock (buffer, midi);
+    long allocs = 0;
+    bool finite = true;
+    double energy = 0.0;
+    for (int b = 0; b < 160; ++b) // ~0.85 s: long enough for the first synced echo to arrive
+    {
+        midi.clear();
+        if (b == 0) // hold a chord for the whole run so the free-running arp has steps to play
+        {
+            midi.addEvent (juce::MidiMessage::noteOn (1, 48, 0.9f), 3);
+            midi.addEvent (juce::MidiMessage::noteOn (1, 55, 0.9f), 3);
+        }
+        test::AllocationScope scope;
+        p.processBlock (buffer, midi);
+        allocs += scope.count();
+        for (int i = 0; i < 256; ++i)
+        {
+            finite &= std::isfinite (buffer.getSample (0, i)) && std::isfinite (buffer.getSample (1, i));
+            energy += (double) buffer.getSample (0, i) * buffer.getSample (0, i);
+        }
+    }
+    MBX_CHECK (allocs == 0, "processBlock allocated %ld times", allocs);
+    MBX_CHECK (finite);
+    MBX_CHECK (energy > 0.01, "rack produced silence");
+}
+
+MBX_TEST (arpeggiator_plays_up_pattern_on_the_grid)
+{
+    dsp::ArpSeq arp;
+    arp.prepare (48000.0f);
+    dsp::ArpSettings s;
+    s.mode = dsp::ArpMode::Arp;
+    s.pattern = dsp::ArpPattern::Up;
+    s.rateDivision = 5; // 1/16 = 0.25 beat = 6000 samples at 120 BPM
+    s.gate = 0.5f;
+    dsp::NoteEvent in[3] = { { 0, true, 64, 0.8f, 0 }, { 0, true, 60, 0.8f, 0 }, { 0, true, 67, 0.8f, 0 } };
+    std::array<dsp::NoteEvent, 64> out {};
+    std::vector<int> ons, onTimes;
+    long t0 = 0;
+    for (int block = 0; block < 60; ++block)
+    {
+        const int n = arp.process (s, dsp::SeqPattern::makeDefault(), block == 0 ? in : nullptr, block == 0 ? 3 : 0, out.data(), 64, 512,
+                                   (double) block * 512 / 48000.0 * 2.0, 120.0f);
+        for (int i = 0; i < n; ++i)
+            if (out[(size_t) i].on) { ons.push_back (out[(size_t) i].note); onTimes.push_back ((int) (t0 + out[(size_t) i].sample)); }
+        t0 += 512;
+    }
+    MBX_CHECK (ons.size() >= 5, "%d notes", (int) ons.size());
+    MBX_CHECK (ons[0] == 60 && ons[1] == 64 && ons[2] == 67 && ons[3] == 60, "order %d %d %d %d", ons[0], ons[1], ons[2], ons[3]);
+    MBX_CHECK (std::abs ((onTimes[1] - onTimes[0]) - 6000) <= 1, "step spacing %d", onTimes[1] - onTimes[0]);
+}
+
+MBX_TEST (sequencer_applies_pitch_and_ratchets)
+{
+    dsp::ArpSeq arp;
+    arp.prepare (48000.0f);
+    dsp::ArpSettings s;
+    s.mode = dsp::ArpMode::Seq;
+    s.seqLength = 2;
+    s.seqRateDivision = 11; // 1/4 note = 24000 samples at 120 BPM
+    auto pat = dsp::SeqPattern::makeDefault();
+    pat.steps[0] = { true, 0.0f, 0.9f, 0.5f, 1.0f, 1, false, 0.25f, 0.0f };
+    pat.steps[1] = { true, 7.0f, 0.9f, 0.5f, 1.0f, 3, false, 0.75f, 1.0f };
+    dsp::NoteEvent in[1] = { { 0, true, 48, 1.0f, 0 } };
+    std::array<dsp::NoteEvent, 64> out {};
+    std::vector<int> ons;
+    for (int block = 0; block < 100; ++block) // ~1.07 s
+    {
+        const int n = arp.process (s, pat, block == 0 ? in : nullptr, block == 0 ? 1 : 0, out.data(), 64, 512, -1.0, 120.0f);
+        for (int i = 0; i < n; ++i)
+            if (out[(size_t) i].on) ons.push_back (out[(size_t) i].note);
+    }
+    // step 0: one C3, step 1: three G3 ratchets, step 0 again...
+    MBX_CHECK (ons.size() >= 4 && ons[0] == 48 && ons[1] == 55 && ons[2] == 55 && ons[3] == 55, "got %d notes", (int) ons.size());
+}
+
+MBX_TEST (lufs_meter_matches_reference)
+{
+    Meter m;
+    m.prepare (48000.0);
+    std::vector<float> l (48000 * 4), r (48000 * 4);
+    for (size_t i = 0; i < l.size(); ++i) l[i] = r[i] = 0.1f * std::sin (dsp::kTwoPi * 1000.0f * (float) i / 48000.0f);
+    for (size_t pos = 0; pos < l.size(); pos += 512)
+        m.process (l.data() + pos, r.data() + pos, 512);
+    const auto s = m.read();
+    // BS.1770: two channels of a -20 dBFS-peak 1 kHz sine -> about -20.7 LUFS (K-weighting adds ~+0.7 dB at 1 kHz)
+    std::printf ("         LUFS-S %.2f  LUFS-M %.2f  true peak %.3f\n", s.lufsS, s.lufsM, s.truePeak);
+    MBX_CHECK (s.lufsS > -21.5f && s.lufsS < -19.0f, "short-term %.2f", s.lufsS);
+    MBX_CHECK (std::abs (s.truePeak - 0.1f) < 0.01f && ! s.clip);
+}

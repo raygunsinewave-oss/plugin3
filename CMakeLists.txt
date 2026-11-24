@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 # Must be set before project() to take effect.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
 
-project(MysteryBox VERSION 0.2.0 LANGUAGES C CXX)
+project(MysteryBox VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -40,7 +40,7 @@ juce_add_plugin(MysteryBox
     FORMATS                     ${MYSTERYBOX_FORMATS}
     IS_SYNTH                    TRUE
     NEEDS_MIDI_INPUT            TRUE
-    NEEDS_MIDI_OUTPUT           FALSE
+    NEEDS_MIDI_OUTPUT           TRUE
     IS_MIDI_EFFECT              FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     COPY_PLUGIN_AFTER_BUILD     FALSE
@@ -53,7 +53,9 @@ set(MYSTERYBOX_SOURCES
     src/PluginEditor.cpp
     src/ui/Sections.cpp
     src/params/Parameters.cpp
-    src/state/Assets.cpp)
+    src/state/Assets.cpp
+    src/dsp/Effects.cpp
+    src/fx/FxRack.cpp)
 
 target_sources(MysteryBox PRIVATE ${MYSTERYBOX_SOURCES})
 

@@ -11,6 +11,7 @@
 #include <juce_data_structures/juce_data_structures.h>
 #include <juce_events/juce_events.h>
 
+#include "../dsp/ArpSeq.h"
 #include "../dsp/SynthEngine.h"
 
 namespace mbx
@@ -75,6 +76,34 @@ private:
     std::atomic<uint32_t> changeCounter { 0 };
 };
 
+/** Sequencer pattern with the same seqlock scheme as ShapeStore. */
+class SeqStore
+{
+public:
+    SeqStore() { set (dsp::SeqPattern::makeDefault()); }
+    void set (const dsp::SeqPattern& p) noexcept
+    {
+        seq.fetch_add (1, std::memory_order_acq_rel);
+        std::atomic_thread_fence (std::memory_order_release);
+        pattern = p;
+        seq.fetch_add (1, std::memory_order_release);
+    }
+    dsp::SeqPattern get() const noexcept { return pattern; }
+    void readIfChanged (dsp::SeqPattern& out, uint32_t& seen) const noexcept
+    {
+        const uint32_t v1 = seq.load (std::memory_order_acquire);
+        if ((v1 & 1u) != 0 || v1 == seen) return;
+        dsp::SeqPattern copy = pattern;
+        std::atomic_thread_fence (std::memory_order_acquire);
+        if (seq.load (std::memory_order_relaxed) == v1) { out = copy; seen = v1; }
+    }
+    uint32_t version() const noexcept { return seq.load (std::memory_order_relaxed); }
+
+private:
+    std::atomic<uint32_t> seq { 0 };
+    dsp::SeqPattern pattern;
+};
+
 /** Atomically published immutable object with deferred destruction. */
 template <typename T>
 class AssetSlot
@@ -124,6 +153,7 @@ public:
     ~Assets() override;
 
     ShapeStore shapes;
+    SeqStore sequence;
     std::array<AssetSlot<dsp::Wavetable>, dsp::kNumOscillators> userTables;
     std::array<AssetSlot<dsp::SampleData>, dsp::kNumOscillators> samples;
 

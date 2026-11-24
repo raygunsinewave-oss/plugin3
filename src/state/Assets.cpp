@@ -164,6 +164,15 @@ juce::ValueTree Assets::toValueTree() const
         t.setProperty ("lfo" + juce::String (l + 1) + "_custom", ShapeStore::serialise (shapes.get (ShapeStore::lfoIndex (l))), nullptr);
     for (int m = 0; m < dsp::kNumMacros; ++m)
         t.setProperty ("macro" + juce::String (m + 1) + "_name", getMacroName (m), nullptr);
+    {
+        const auto pat = sequence.get();
+        juce::StringArray steps;
+        for (const auto& st : pat.steps)
+            steps.add (juce::String ((int) st.on) + "," + juce::String (st.pitch, 2) + "," + juce::String (st.velocity, 3) + ","
+                       + juce::String (st.gate, 3) + "," + juce::String (st.probability, 3) + "," + juce::String (st.ratchet) + ","
+                       + juce::String ((int) st.slide) + "," + juce::String (st.mod1, 3) + "," + juce::String (st.mod2, 3));
+        t.setProperty ("seq_pattern", steps.joinIntoString (";"), nullptr);
+    }
     for (int o = 0; o < dsp::kNumOscillators; ++o)
     {
         const auto wtSource = userTables[(size_t) o].getSourcePath();
@@ -185,6 +194,27 @@ void Assets::fromValueTree (const juce::ValueTree& t)
     shapes.set (ShapeStore::kMsegIndex, ShapeStore::parse (t["mseg"], dsp::Shape::defaultMseg()));
     for (int l = 0; l < dsp::kNumLfos; ++l)
         shapes.set (ShapeStore::lfoIndex (l), ShapeStore::parse (t["lfo" + juce::String (l + 1) + "_custom"], dsp::Shape::defaultCustom()));
+    if (t.hasProperty ("seq_pattern"))
+    {
+        auto pat = dsp::SeqPattern::makeDefault();
+        auto steps = juce::StringArray::fromTokens (t["seq_pattern"].toString(), ";", "");
+        for (int i = 0; i < std::min (steps.size(), dsp::SeqPattern::kMaxSteps); ++i)
+        {
+            auto v = juce::StringArray::fromTokens (steps[i], ",", "");
+            if (v.size() < 9) continue;
+            auto& st = pat.steps[(size_t) i];
+            st.on = v[0].getIntValue() != 0;
+            st.pitch = juce::jlimit (-24.0f, 24.0f, v[1].getFloatValue());
+            st.velocity = juce::jlimit (0.0f, 1.0f, v[2].getFloatValue());
+            st.gate = juce::jlimit (0.05f, 1.0f, v[3].getFloatValue());
+            st.probability = juce::jlimit (0.0f, 1.0f, v[4].getFloatValue());
+            st.ratchet = juce::jlimit (1, 4, v[5].getIntValue());
+            st.slide = v[6].getIntValue() != 0;
+            st.mod1 = juce::jlimit (0.0f, 1.0f, v[7].getFloatValue());
+            st.mod2 = juce::jlimit (0.0f, 1.0f, v[8].getFloatValue());
+        }
+        sequence.set (pat);
+    }
     for (int m = 0; m < dsp::kNumMacros; ++m)
         if (t.hasProperty ("macro" + juce::String (m + 1) + "_name"))
             setMacroName (m, t["macro" + juce::String (m + 1) + "_name"]);

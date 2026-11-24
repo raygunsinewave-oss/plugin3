@@ -140,7 +140,9 @@ public:
     float lookup (float phase) const noexcept
     {
         const float idx = phase * static_cast<float> (kSize);
-        const int i     = static_cast<int> (idx);
+        int i           = static_cast<int> (idx);
+        if (i >= kSize || i < 0) // a double phase just below 1 can round up to 1.0f when cast
+            i = i < 0 ? 0 : kSize - 1;
         const float f   = idx - static_cast<float> (i);
         return table[(size_t) i] + f * (table[(size_t) i + 1] - table[(size_t) i]);
     }

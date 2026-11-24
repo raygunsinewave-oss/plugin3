@@ -70,6 +70,7 @@ struct PerformanceState
     std::array<float, 16> chBend {}, chPressure {}, chTimbre {};
     float bpm = 120.0f;
     std::array<double, kNumLfos> lfoFreeCycles {};
+    std::array<float, 2> seqLanes {};
 };
 
 /** Which oscillator raw signals are needed and in which order to render them (per block). */
@@ -266,6 +267,8 @@ public:
         src[(size_t) ModSource::MpePressure] = perf.chPressure[(size_t) channel];
         src[(size_t) ModSource::MpeSlide]    = perf.chTimbre[(size_t) channel];
         src[(size_t) ModSource::MpeGlide]    = perf.chBend[(size_t) channel];
+        src[(size_t) ModSource::SeqLane1]    = perf.seqLanes[0];
+        src[(size_t) ModSource::SeqLane2]    = perf.seqLanes[1];
 
         // ---------------------------------------------------------------- matrix
         std::array<float, (size_t) dest::Count> d {};
@@ -739,6 +742,7 @@ public:
                 voice.setPolyPressure (v);
     }
     void setTimbre (float v, int channel = 0) noexcept { perf.chTimbre[(size_t) (channel & 15)] = v; }
+    void setSeqLanes (float a, float b) noexcept { perf.seqLanes = { a, b }; }
 
     void allNotesOff() noexcept
     {
