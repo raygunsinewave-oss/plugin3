@@ -11,8 +11,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: macOS (Universal)
-            os: macos-latest
+          # Two macOS runner pools: Apple-Silicon capacity is often exhausted, so an Intel runner
+          # (which cross-compiles the same Universal binary) runs in parallel.
+          - name: macOS (Universal, Intel runner)
+            os: macos-15-intel
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+            pluginval: https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip
+          - name: macOS (Universal, ARM runner)
+            os: macos-15
             cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
             pluginval: https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip
           - name: Windows (x64)
@@ -45,7 +51,18 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel 4
 
+      - name: Unit tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bin = "build\MysteryBoxTests_artefacts\Release\MysteryBoxTests.exe"
+          & $bin
+          $code = $LASTEXITCODE
+          Write-Host ("Exit code: {0} (0x{1:X8})" -f $code, $code)
+          exit $code
+
       - name: Unit tests
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           RUN=""
@@ -93,7 +110,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: MysteryBox-${{ runner.os }}
+          name: MysteryBox-${{ runner.os }}-${{ matrix.os }}
           path: |
             MysteryBox-*.pkg
             MysteryBox-*.zip

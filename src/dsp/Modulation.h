@@ -55,7 +55,12 @@ namespace dest
     inline constexpr int AmpPan      = SubLevel + 4;
     inline constexpr int LfoRateBase = SubLevel + 5;                              // 70..75
     inline constexpr int GlobalPitch = LfoRateBase + kNumLfos;                    // 76
-    inline constexpr int Count       = GlobalPitch + 1;
+    // Phase 5: global FX destinations (driven by global sources such as macros / mod wheel)
+    inline constexpr int FxMixBase   = GlobalPitch + 1;                           // 77..86 rack slot mix
+    inline constexpr int SendALevel  = FxMixBase + 10;                            // 87
+    inline constexpr int SendBLevel  = SendALevel + 1;                            // 88
+    inline constexpr int Count       = SendBLevel + 1;
+    inline constexpr bool isGlobalFx (int d) { return d >= FxMixBase && d < Count; }
 
     inline constexpr int osc (int oscIndex, OscDest d) { return OscBase + oscIndex * NumOscDests + d; }
     inline constexpr int filter (int f, FilterDest d)  { return FilterBase + f * NumFilterDests + d; }

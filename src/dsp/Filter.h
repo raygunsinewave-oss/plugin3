@@ -29,6 +29,7 @@ struct FilterSettings
     float drive      = 0.0f; // 0..1
     float mix        = 1.0f; // 0..1
     float fmAmount   = 0.0f; // 0..1, audio-rate cutoff FM depth (+-4 octaves)
+    int satModel     = 0;    // drive character: 0 tanh, 1 tube (asymmetric), 2 diode (hard knee), 3 tape (soft)
 };
 
 class FilterUnit
@@ -158,7 +159,7 @@ private:
         auto& A = ch[0];
         auto& B = ch[1];
         auto one = [&] (Channel& C, float x) noexcept {
-            const float in = drive ? preDrive (x, s.drive) : x;
+            const float in = drive ? preDrive (x, s.drive, s.satModel) : x;
             float y = svfTick<Kind> (C.a, in, c1, kPick);
             if constexpr (Four) y = svfTick<Kind> (C.b, y, c2, kFlat);
             return wetOnly ? y : x + (y - x) * mix;
@@ -186,12 +187,21 @@ private:
         }
     }
 
-    static inline float preDrive (float x, float drive) noexcept
+    static inline float preDrive (float x, float drive, int model = 0) noexcept
     {
         if (drive <= 0.001f)
             return x;
         const float d = 1.0f + 15.0f * drive * drive;
-        return fastTanh (x * d) / std::sqrt (d);
+        const float y = x * d;
+        float s;
+        switch (model)
+        {
+            case 1:  s = fastTanh (y + 0.25f) - 0.2449f; break;                 // tube: asymmetric, even harmonics
+            case 2:  s = std::clamp (y * 1.2f, -1.0f, 1.0f) * 0.92f + 0.08f * fastTanh (y); break; // diode: hard knee
+            case 3:  s = y / (1.0f + std::abs (y)) * 1.3f; break;              // tape: very soft
+            default: s = fastTanh (y); break;
+        }
+        return s / std::sqrt (d);
     }
 
     void processChannel (int c, const FilterSettings& s, float hz0, float hz1, const float* fm, float* x, int n,
@@ -234,7 +244,7 @@ private:
                 for (int i = 0; i < n; ++i)
                 {
                     const float g  = gainAt (i);
-                    const float in = preDrive (x[i], s.drive);
+                    const float in = preDrive (x[i], s.drive, s.satModel);
                     float lp, bp, hp;
                     svf (st.a, in, g, k, lp, bp, hp);
                     float y = pick (kind, lp, bp, hp, in, std::max (k, 0.05f));
@@ -329,7 +339,7 @@ private:
                     const float fr = rp - (float) r0;
                     const float d0 = buf[(size_t) r0], d1 = buf[(size_t) ((r0 + 1) % len)];
                     const float delayed = d0 + (d1 - d0) * fr;
-                    const float in = preDrive (x[i], s.drive);
+                    const float in = preDrive (x[i], s.drive, s.satModel);
                     const float y = in + fb * delayed;
                     buf[(size_t) st.combWrite] = fastTanh (y * 0.5f) * 2.0f; // saturating feedback
                     st.combWrite = (st.combWrite + 1) % len;
@@ -357,7 +367,7 @@ private:
                 const float k = 1.0f / q;
                 for (int i = 0; i < n; ++i)
                 {
-                    const float in = preDrive (x[i], s.drive);
+                    const float in = preDrive (x[i], s.drive, s.satModel);
                     float lp, bp, hp, y = 0.0f;
                     svf (st.f1, in, g[0], k, lp, bp, hp); y += bp * k * 1.0f;
                     svf (st.f2, in, g[1], k, lp, bp, hp); y += bp * k * 0.55f;
@@ -376,7 +386,7 @@ private:
                 {
                     const float g = gainAt (i);
                     const float G = g / (1.0f + g);
-                    float u = preDrive (x[i], s.drive) + fbAmt * st.phaserFb;
+                    float u = preDrive (x[i], s.drive, s.satModel) + fbAmt * st.phaserFb;
                     for (int a = 0; a < 6; ++a)
                     {
                         const float v = (u - st.ap[a]) * G;

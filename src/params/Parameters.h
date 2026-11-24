@@ -16,6 +16,7 @@ namespace mbx::params
 inline constexpr int kVersionPhase1 = 1;
 inline constexpr int kVersionPhase2 = 2;
 inline constexpr int kVersionPhase3 = 3;
+inline constexpr int kVersionPhase4 = 4;
 inline constexpr int kNumFxSlots    = 10; // rack slots; plus send buses A and B
 inline constexpr int kNumEqBands    = 6;
 inline constexpr int kNumOscs       = dsp::kNumOscillators;
@@ -90,6 +91,11 @@ namespace id
                                  *arpRetrigger = "arp_retrigger", *seqLength = "seq_length", *seqRate = "seq_rate",
                                  *seqSwing = "seq_swing", *seqFollow = "seq_follow", *midiOut = "midi_out";
 
+    // advanced (Phase 4)
+    inline constexpr const char* analogDrift = "analog_drift", *voiceRandom = "voice_random", *stealMode = "steal_mode",
+                                 *modSmooth = "mod_smooth", *velCurve = "vel_curve", *keyCurve = "key_curve",
+                                 *dcBlock = "dc_block", *satModel = "sat_model";
+
     // global (Phase 1)
     inline constexpr const char* masterVolume = "master_volume", *polyphony = "polyphony", *bendRange = "bend_range",
                                  *oversampling = "oversampling";
@@ -118,6 +124,8 @@ const juce::StringArray& glideModeNames();
 const juce::StringArray& fxTypeNames();
 const juce::StringArray& arpModeNames();
 const juce::StringArray& arpPatternNames();
+const juce::StringArray& stealModeNames();
+const juce::StringArray& satModelNames();
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
@@ -156,6 +164,7 @@ private:
     P ringOn {}, ringA {}, ringB {}, ringLevel {}, ringRoute {};
     P voiceMode {}, glideTime {}, glideMode {}, glideCurve {}, stackVoices {}, stackDetune {}, mpeOn {}, mpeBend {};
     P master {}, poly {}, bend {}, os {};
+    P drift {}, vrand {}, steal {}, msmooth {}, velc {}, keyc {}, sat {};
 };
 
 } // namespace mbx::params

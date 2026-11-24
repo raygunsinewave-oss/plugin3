@@ -469,6 +469,8 @@ namespace
                 addAndMakeVisible (*knobs.back());
             }
             loop.bind (s, params::envId (e, params::id::envLoop));
+            chip = std::make_unique<ModSourceChip> ((int) dsp::ModSource::Env1 + e, "ENV " + juce::String (e + 1), accent);
+            addAndMakeVisible (*chip);
             addAndMakeVisible (display);
             addAndMakeVisible (loop);
             addAndMakeVisible (routed);
@@ -479,10 +481,12 @@ namespace
             for (size_t k = 0; k < knobs.size(); ++k)
                 knobs[k]->setBounds (352 + (int) (k % 6) * 72, (int) (k / 6) * 94, 70, 90);
             loop.setBounds (352 + 5 * 72 + 6, 94 + 34, 58, 22);
+            chip->setBounds (352 + 5 * 72 + 6, 94 + 64, 96, 22);
             routed.setBounds (868, 0, getWidth() - 868, getHeight());
         }
 
     private:
+        std::unique_ptr<ModSourceChip> chip;
         EnvelopeDisplay display;
         RoutedList routed;
         std::vector<std::unique_ptr<ParamKnob>> knobs;
@@ -502,7 +506,7 @@ namespace
             sync.bind (s, params::id::msegSync);
             loop.bind (s, params::id::msegLoop);
             div.bind (s, params::id::msegDiv);
-            for (juce::Component* c : std::initializer_list<juce::Component*> { &editor, &time, &sync, &loop, &div, &routed })
+            for (juce::Component* c : std::initializer_list<juce::Component*> { &editor, &time, &sync, &loop, &div, &routed, &chip })
                 addAndMakeVisible (c);
         }
         void resized() override
@@ -512,10 +516,12 @@ namespace
             sync.setBounds (792, 14, 64, 22);
             loop.setBounds (792, 44, 64, 22);
             div.setBounds (712, 100, 144, 34);
+            chip.setBounds (712, 146, 144, 24);
             routed.setBounds (868, 0, getWidth() - 868, getHeight());
         }
 
     private:
+        ModSourceChip chip { (int) dsp::ModSource::Mseg, "MSEG", colours::amber };
         ShapeEditor editor;
         RoutedList routed;
         ParamKnob time { "TIME", colours::amber };
@@ -541,7 +547,8 @@ namespace
             fade.bind (state, params::lfoId (l, params::id::lfoFade));
             smooth.bind (state, params::lfoId (l, params::id::lfoSmooth));
             rate.setModTarget (dsp::dest::LfoRateBase + l, 0.33f);
-            for (juce::Component* c : std::initializer_list<juce::Component*> { &display, &shape, &mode, &div, &sync, &bipolar, &rate, &phase, &fade, &smooth, &routed })
+            chip = std::make_unique<ModSourceChip> ((int) dsp::ModSource::Lfo1 + l, "LFO " + juce::String (l + 1), colours::lime);
+            for (juce::Component* c : std::initializer_list<juce::Component*> { &display, &shape, &mode, &div, &sync, &bipolar, &rate, &phase, &fade, &smooth, &routed, chip.get() })
                 addAndMakeVisible (c);
             addChildComponent (editor);
             startTimerHz (8);
@@ -555,6 +562,7 @@ namespace
             div.setBounds (764, 0, 92, 34);
             sync.setBounds (532, 44, 60, 22);
             bipolar.setBounds (598, 44, 76, 22);
+            chip->setBounds (680, 44, 110, 22);
             ParamKnob* k[] = { &rate, &phase, &fade, &smooth };
             for (int i = 0; i < 4; ++i)
                 k[i]->setBounds (532 + i * 82, 78, 78, 104);
@@ -575,6 +583,7 @@ namespace
 
         juce::AudioProcessorValueTreeState& state;
         int lfo;
+        std::unique_ptr<ModSourceChip> chip;
         LfoDisplay display;
         ShapeEditor editor;
         RoutedList routed;
@@ -706,6 +715,8 @@ namespace
 
                 routed[(size_t) m] = std::make_unique<RoutedList> (p.getState(), (int) dsp::ModSource::Macro1 + m, colours::cyan);
                 addAndMakeVisible (*routed[(size_t) m]);
+                chips[(size_t) m] = std::make_unique<ModSourceChip> ((int) dsp::ModSource::Macro1 + m, "M" + juce::String (m + 1), colours::cyan);
+                addAndMakeVisible (*chips[(size_t) m]);
             }
         }
         void resized() override
@@ -714,8 +725,9 @@ namespace
             for (int m = 0; m < dsp::kNumMacros; ++m)
             {
                 names[(size_t) m].setBounds (m * w + 4, 0, w - 8, 18);
-                knobs[(size_t) m]->setBounds (m * w + (w - 96) / 2, 16, 96, 100);
-                routed[(size_t) m]->setBounds (m * w + 4, 118, w - 8, getHeight() - 118);
+                knobs[(size_t) m]->setBounds (m * w + (w - 96) / 2, 16, 96, 92);
+                chips[(size_t) m]->setBounds (m * w + 20, 110, w - 40, 20);
+                routed[(size_t) m]->setBounds (m * w + 4, 134, w - 8, getHeight() - 134);
             }
         }
 
@@ -724,6 +736,7 @@ namespace
         std::array<std::unique_ptr<ParamKnob>, dsp::kNumMacros> knobs;
         std::array<juce::Label, dsp::kNumMacros> names;
         std::array<std::unique_ptr<RoutedList>, dsp::kNumMacros> routed;
+        std::array<std::unique_ptr<ModSourceChip>, dsp::kNumMacros> chips;
     };
 } // namespace
 
@@ -775,7 +788,7 @@ void ModSection::showTab (int index)
     repaint();
 }
 
-void ModSection::addModulation (int destination)
+void ModSection::addModulation (int destination, int source)
 {
     auto& s = proc.getState();
     for (int k = 0; k < dsp::kNumMatrixSlots; ++k)
@@ -792,7 +805,7 @@ void ModSection::addModulation (int destination)
                     p->endChangeGesture();
                 }
             };
-            set (params::id::modSrc, (float) dsp::ModSource::Lfo1);
+            set (params::id::modSrc, (float) source);
             set (params::id::modDest, (float) destination);
             set (params::id::modAmt, 0.25f);
             showTab (kMatrixTab);

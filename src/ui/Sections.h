@@ -129,8 +129,8 @@ public:
     void showTab (int index);
     std::vector<ParamKnob*> getModKnobs();
 
-    /** Puts `destination` into the first free matrix slot (source LFO 1) and shows the matrix. */
-    void addModulation (int destination);
+    /** Puts `destination` into the first free matrix slot and shows the matrix. */
+    void addModulation (int destination, int source = (int) dsp::ModSource::Lfo1);
 
     static constexpr int kMatrixTab = 11, kMacroTab = 12;
 

@@ -48,6 +48,9 @@ const juce::StringArray& fxTypeNames()
 const juce::StringArray& arpModeNames()    { static const juce::StringArray n { "Off", "Arpeggiator", "Sequencer" }; return n; }
 const juce::StringArray& arpPatternNames() { static const juce::StringArray n { "Up", "Down", "Up/Down", "Random", "As Played", "Chord" }; return n; }
 
+const juce::StringArray& stealModeNames() { static const juce::StringArray n { "Quietest", "Oldest", "Lowest Note", "Highest Note" }; return n; }
+const juce::StringArray& satModelNames()  { static const juce::StringArray n { "Clean Tanh", "Tube", "Diode", "Tape" }; return n; }
+
 const juce::StringArray& tableNames()
 {
     static const juce::StringArray names = [] {
@@ -77,6 +80,10 @@ const juce::StringArray& modDestNames()
         for (int l = 0; l < dsp::kNumLfos; ++l)
             s.add ("LFO " + juce::String (l + 1) + " Rate");
         s.add ("Global Pitch");
+        for (int k = 0; k < kNumFxSlots; ++k)
+            s.add ("FX " + juce::String (k + 1) + " Mix");
+        s.add ("Send A Level");
+        s.add ("Send B Level");
         jassert (s.size() == dsp::dest::Count);
         return s;
     }();
@@ -417,6 +424,21 @@ APVTS::ParameterLayout createLayout()
         layout.add (std::move (group));
     }
 
+    // ---------------------------------------------------------------- advanced (Phase 4)
+    {
+        auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("advanced", "ADVANCED", "|");
+        Builder b { *group, kVersionPhase4 };
+        b.unit (id::analogDrift, "Analog Drift", 0.0f);
+        b.unit (id::voiceRandom, "Per-Voice Random", 0.0f);
+        b.choice (id::stealMode, "Voice Steal Mode", stealModeNames(), 0);
+        b.real (id::modSmooth, "Mod Smoothing", { 0.0f, 100.0f, 0.1f }, 0.0f, juce::AudioParameterFloatAttributes().withLabel ("ms"));
+        b.real (id::velCurve, "Velocity Curve", { -1.0f, 1.0f }, 0.0f, curveAttr());
+        b.real (id::keyCurve, "Keytrack Curve", { -1.0f, 1.0f }, 0.0f, curveAttr());
+        b.boolean (id::dcBlock, "DC Blocker", true);
+        b.choice (id::satModel, "Filter Saturation", satModelNames(), 0);
+        layout.add (std::move (group));
+    }
+
     // ---------------------------------------------------------------- global
     auto global = std::make_unique<juce::AudioProcessorParameterGroup> ("global", "GLOBAL", "|");
     {
@@ -503,6 +525,8 @@ ParameterCache::ParameterCache (APVTS& apvts)
     voiceMode = get (id::voiceMode); glideTime = get (id::glideTime); glideMode = get (id::glideMode); glideCurve = get (id::glideCurve);
     stackVoices = get (id::stackVoices); stackDetune = get (id::stackDetune); mpeOn = get (id::mpeOn); mpeBend = get (id::mpeBendRange);
     master = get (id::masterVolume); poly = get (id::polyphony); bend = get (id::bendRange); os = get (id::oversampling);
+    drift = get (id::analogDrift); vrand = get (id::voiceRandom); steal = get (id::stealMode); msmooth = get (id::modSmooth);
+    velc = get (id::velCurve); keyc = get (id::keyCurve); sat = get (id::satModel);
 }
 
 void ParameterCache::read (dsp::EngineSettings& out) const noexcept
@@ -629,6 +653,14 @@ void ParameterCache::read (dsp::EngineSettings& out) const noexcept
     out.polyphony = i (poly);
     out.bendRange = (float) i (bend);
     out.masterGain = juce::Decibels::decibelsToGain (f (master), -59.9f);
+    out.analogDrift = f (drift);
+    out.voiceRandom = f (vrand);
+    out.stealMode = i (steal);
+    out.modSmoothMs = f (msmooth);
+    out.velocityCurve = f (velc);
+    out.keytrackCurve = f (keyc);
+    for (auto& fp : out.filter)
+        fp.dsp.satModel = i (sat);
 }
 
 int ParameterCache::oversamplingIndex() const noexcept

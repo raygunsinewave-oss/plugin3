@@ -55,6 +55,15 @@ struct EngineSettings
     float bendRange       = 2.0f;
     float masterGain      = 0.5f;
 
+    // Advanced (Phase 4)
+    float analogDrift   = 0.0f;  // 0..1, slow per-voice pitch wander (up to +-12 cents)
+    float voiceRandom   = 0.0f;  // 0..1, per-note random pitch / cutoff / pan offsets
+    int stealMode       = 0;     // 0 quietest, 1 oldest, 2 lowest note, 3 highest note
+    float modSmoothMs   = 0.0f;  // smoothing applied to every matrix destination
+    float velocityCurve = 0.0f;  // -1..1 (positive = more sensitive)
+    float keytrackCurve = 0.0f;  // -1..1
+    const float* tuning = nullptr; // 128 per-note semitone offsets (microtuning), or null for 12-TET
+
     // Resolved by the host layer each block (pointers stay valid for the block).
     const Shape* msegShape = nullptr;
     std::array<const Shape*, kNumLfos> lfoCustom {};
@@ -106,7 +115,7 @@ public:
                 float detuneSemis, float panOffset, float glideFromNote) noexcept
     {
         note       = midiNote;
-        vel        = velocity;
+        vel        = std::pow (std::clamp (velocity, 0.0f, 1.0f), std::exp2 (-s.velocityCurve * 1.5f));
         channel    = std::clamp (midiChannel, 0, 15);
         startOrder = order;
         keyDown    = true;
@@ -119,6 +128,13 @@ public:
         pitchNow    = glideFromNote >= 0.0f ? glideFromNote : pitchTarget;
         glideStart  = pitchNow;
         randomValue = rng.bipolar();
+        randPitch   = rng.bipolar() * 0.2f;  // up to +-20 cents at full "per-voice random"
+        randCutoff  = rng.bipolar() * 12.0f; // up to +-12 semitones
+        randPan     = rng.bipolar() * 0.35f;
+        driftPhase  = rng.uniform();
+        driftValue  = 0.0f;
+        smoothedDest.fill (0.0f);
+        firstMod    = true;
         polyPressure = 0.0f;
         msegTime    = 0.0f;
         firstChunk  = true;
@@ -260,7 +276,7 @@ public:
         src[(size_t) ModSource::Aftertouch] = std::max ({ polyPressure, perf.aftertouch, s.mpe ? perf.chPressure[(size_t) channel] : 0.0f });
         src[(size_t) ModSource::ModWheel]   = perf.modWheel;
         src[(size_t) ModSource::PitchBend]  = perf.pitchBend;
-        src[(size_t) ModSource::Keytrack]   = std::clamp (((float) note - 60.0f) / 60.0f, -1.0f, 1.0f);
+        src[(size_t) ModSource::Keytrack]   = applyModCurve (std::clamp (((float) note - 60.0f) / 60.0f, -1.0f, 1.0f), s.keytrackCurve);
         src[(size_t) ModSource::Random]     = randomValue;
         for (int m = 0; m < kNumMacros; ++m)
             src[(size_t) ModSource::Macro1 + (size_t) m] = s.macros[(size_t) m];
@@ -281,13 +297,29 @@ public:
                 v *= src[(size_t) slot.via];
             d[(size_t) slot.destination] += v;
         }
+        if (s.modSmoothMs > 0.05f && ! firstMod) // optional smoothing of every destination
+        {
+            const float a = 1.0f - std::exp (-(float) n / (s.modSmoothMs * 0.001f * sr));
+            for (size_t k = 0; k < d.size(); ++k)
+                d[k] = smoothedDest[k] += (d[k] - smoothedDest[k]) * a;
+        }
+        else
+            smoothedDest = d;
+        firstMod = false;
         for (int k = 0; k < kNumLfos; ++k)
             lastLfoRateMod[(size_t) k] = d[(size_t) (dest::LfoRateBase + k)];
         lastDest = d;
 
         // ---------------------------------------------------------------- pitch / glide
         updateGlide (s, n, sr);
-        float pitch = pitchNow + stackDetune + perf.pitchBend * s.bendRange + d[(size_t) dest::GlobalPitch] * dest::scale (dest::GlobalPitch);
+        if (s.analogDrift > 0.0f) // smoothed random walk, ~0.3 Hz
+        {
+            driftPhase += 0.3f * (float) n / sr;
+            if (driftPhase >= 1.0f) { driftPhase -= 1.0f; driftTarget = rng.bipolar(); }
+            driftValue += (driftTarget - driftValue) * std::min (1.0f, 2.0f * (float) n / sr);
+        }
+        const float tune = s.tuning != nullptr ? s.tuning[std::clamp (note, 0, 127)] : 0.0f;
+        float pitch = pitchNow + tune + stackDetune + driftValue * s.analogDrift * 0.12f + randPitch * s.voiceRandom + perf.pitchBend * s.bendRange + d[(size_t) dest::GlobalPitch] * dest::scale (dest::GlobalPitch);
         if (s.mpe)
             pitch += perf.chBend[(size_t) channel] * s.mpeBendRange;
         const float hz = midiNoteToHz (pitch);
@@ -421,6 +453,7 @@ public:
                               + fp.envAmount * 96.0f * src[(size_t) ModSource::Env2]
                               + fp.keytrack * ((float) note - 60.0f)
                               + fp.velocity * vel * 48.0f
+                              + randCutoff * s.voiceRandom
                               + D (dest::Cutoff);
             hzEnd[f] = midiNoteToHz (std::clamp (semis, 0.0f, 140.0f));
             fs[f] = fp.dsp;
@@ -460,7 +493,7 @@ public:
         const float vs       = s.envVelocity[0];
         const float velGain  = 1.0f - vs + vs * vel;
         const float ampTgt   = std::clamp (1.0f + d[(size_t) dest::AmpLevel], 0.0f, 2.0f);
-        const float panPos = std::clamp (stackPan + d[(size_t) dest::AmpPan], -1.0f, 1.0f);
+        const float panPos = std::clamp (stackPan + randPan * s.voiceRandom + d[(size_t) dest::AmpPan], -1.0f, 1.0f);
         if (! exactlyEqual (panPos, cachedPanPos))
         {
             equalPowerPan (panPos, cachedPanL, cachedPanR);
@@ -602,6 +635,9 @@ private:
     float pitchNow = 60.0f, pitchTarget = 60.0f, glideStart = 60.0f, stackDetune = 0.0f, stackPan = 0.0f;
     float msegTime = 0.0f, subPhase = 0.0f, subLevelPrev = 0.0f, noiseLevelPrev = 0.0f, ringLevelPrev = 0.0f;
     float ampPrev = 1.0f, panPrevL = 1.0f, panPrevR = 1.0f;
+    float randPitch = 0.0f, randCutoff = 0.0f, randPan = 0.0f, driftPhase = 0.0f, driftValue = 0.0f, driftTarget = 0.0f;
+    std::array<float, (size_t) dest::Count> smoothedDest {};
+    bool firstMod = true;
     float cachedPanPos = -9.0f, cachedPanL = 1.0f, cachedPanR = 1.0f;
     uint64_t startOrder = 0, noteSerial = 0;
     uint32_t voiceSeed = 1;
@@ -860,10 +896,18 @@ private:
         }
 
         Voice* victim = nullptr;
-        for (auto& v : voices)
-            if (v.isActive() && v.isReleasing()
-                && (victim == nullptr || v.getEnvelopeLevel() < victim->getEnvelopeLevel()))
-                victim = &v;
+        if (target.stealMode == 2 || target.stealMode == 3) // lowest / highest note
+        {
+            for (auto& v : voices)
+                if (v.isActive() && v.getOrder() < order
+                    && (victim == nullptr || (target.stealMode == 2 ? v.getKeyNote() < victim->getKeyNote() : v.getKeyNote() > victim->getKeyNote())))
+                    victim = &v;
+        }
+        else if (target.stealMode == 0)
+            for (auto& v : voices)
+                if (v.isActive() && v.isReleasing()
+                    && (victim == nullptr || v.getEnvelopeLevel() < victim->getEnvelopeLevel()))
+                    victim = &v;
         if (victim == nullptr)
             for (auto& v : voices)
                 if (v.isActive() && v.getOrder() < order && (victim == nullptr || v.getOrder() < victim->getOrder()))

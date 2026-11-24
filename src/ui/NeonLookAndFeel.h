@@ -7,7 +7,10 @@ namespace mbx::ui
 class NeonLookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
-    NeonLookAndFeel()
+    NeonLookAndFeel() { refreshColours(); }
+
+    /** Re-applies the current theme palette to JUCE's colour ids. */
+    void refreshColours()
     {
         using namespace colours;
         setColour (juce::ResizableWindow::backgroundColourId, base);

@@ -24,7 +24,7 @@ namespace
     class SlotDisplay final : public juce::Component, private juce::Timer
     {
     public:
-        SlotDisplay (MysteryBoxProcessor& p, int s) : proc (p), slot (s) { startTimerHz (24); }
+        SlotDisplay (MysteryBoxProcessor& p, int s) : proc (p), slot (s) { startTimerHz (GlobalSettings::get().fps (24)); }
 
         void paint (juce::Graphics& g) override
         {

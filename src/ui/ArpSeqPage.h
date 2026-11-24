@@ -12,7 +12,7 @@ public:
     enum Lane { Pitch = 0, Velocity, Gate, Probability, Ratchet, Slide, On, Mod1, Mod2, NumLanes };
     static inline const char* laneNames[NumLanes] = { "PITCH", "VEL", "GATE", "PROB", "RATCH", "SLIDE", "ON", "MOD 1", "MOD 2" };
 
-    explicit StepGrid (MysteryBoxProcessor& p) : proc (p) { startTimerHz (20); }
+    explicit StepGrid (MysteryBoxProcessor& p) : proc (p) { startTimerHz (GlobalSettings::get().fps (20)); }
 
     void setLane (int l) { lane = l; repaint(); }
     void setPage (int p) { page = p; repaint(); }

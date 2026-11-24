@@ -17,7 +17,7 @@ inline float meterPos (float gain, float floorDb = -60.0f, float topDb = 6.0f)
 class StereoMeter final : public juce::Component, public juce::SettableTooltipClient, private juce::Timer
 {
 public:
-    StereoMeter (Meter& m, bool slimStyle) : meter (m), slim (slimStyle) { startTimerHz (30); }
+    StereoMeter (Meter& m, bool slimStyle) : meter (m), slim (slimStyle) { startTimerHz (GlobalSettings::get().fps (30)); }
     std::function<void()> onClick;
 
     void mouseUp (const juce::MouseEvent&) override
@@ -101,7 +101,7 @@ private:
 class LoudnessReadout final : public juce::Component, private juce::Timer
 {
 public:
-    explicit LoudnessReadout (Meter& m) : meter (m) { startTimerHz (10); }
+    explicit LoudnessReadout (Meter& m) : meter (m) { startTimerHz (GlobalSettings::get().fps (10)); }
     void paint (juce::Graphics& g) override
     {
         auto r = getLocalBounds().toFloat();
@@ -135,7 +135,7 @@ private:
 class Goniometer final : public juce::Component, private juce::Timer
 {
 public:
-    explicit Goniometer (const ScopeTap& t) : tap (t) { startTimerHz (30); }
+    explicit Goniometer (const ScopeTap& t) : tap (t) { startTimerHz (GlobalSettings::get().fps (30)); }
     void paint (juce::Graphics& g) override
     {
         auto r = getLocalBounds().toFloat();
@@ -202,7 +202,7 @@ public:
     {
         smoothDb.fill (kMinDb);
         peakDb.fill (kMinDb);
-        startTimerHz (30);
+        startTimerHz (GlobalSettings::get().fps (30));
     }
 
     static constexpr float kMinHz = 20.0f, kMaxHz = 20000.0f, kMinDb = -84.0f, kMaxDb = 12.0f;

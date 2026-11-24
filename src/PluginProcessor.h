@@ -8,6 +8,9 @@
 #include "fx/FxRack.h"
 #include "params/Parameters.h"
 #include "state/Assets.h"
+#include "state/GlobalSettings.h"
+#include "state/MidiLearn.h"
+#include "state/Tuning.h"
 
 namespace mbx
 {
@@ -66,6 +69,7 @@ inline const dsp::WavetableBank& factoryWavetables()
 }
 
 class MysteryBoxProcessor final : public juce::AudioProcessor,
+                                  public MidiLearnHost,
                                   private juce::AsyncUpdater
 {
 public:
@@ -105,6 +109,8 @@ public:
     Assets& getAssets() noexcept { return assets; }
     FxRack& getFxRack() noexcept { return fxRack; }
     Meter& getOutputMeter() noexcept { return outMeter; }
+    MidiLearn& getMidiLearn() noexcept override { return midiLearn; }
+    Tuning& getTuning() noexcept { return tuning; }
     Meter& getInputMeter() noexcept { return inMeter; }
     bool isSidechainActive() const noexcept { return sidechainActive.load (std::memory_order_relaxed); }
     int getSeqStep() const noexcept { return seqStep.load (std::memory_order_relaxed); }
@@ -123,7 +129,7 @@ public:
     /** Notes injected from the UI (on-screen keyboard, XD games). Thread-safe, lock-free (single producer). */
     void injectNote (int note, float velocity, bool on) noexcept;
 
-    static constexpr int kStateVersion = 3;
+    static constexpr int kStateVersion = 4;
 
 private:
     void handleAsyncUpdate() override;
@@ -137,6 +143,10 @@ private:
     params::ParameterCache paramCache;
     const dsp::WavetableBank& wavetables = factoryWavetables();
     FxRack fxRack { apvts };
+    MidiLearn midiLearn { *this };
+    Tuning tuning;
+    std::atomic<float>* dcBlockParam = nullptr;
+    float dcStateL = 0.0f, dcStateR = 0.0f, dcPrevL = 0.0f, dcPrevR = 0.0f;
     Meter outMeter, inMeter;
 
     dsp::SynthEngine engine;

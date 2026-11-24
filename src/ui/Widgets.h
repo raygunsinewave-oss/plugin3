@@ -5,6 +5,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "NeonLookAndFeel.h"
+#include "../state/MidiLearn.h"
 
 namespace mbx::ui
 {
@@ -22,7 +23,25 @@ public:
         setVelocityModeParameters (0.25, 1, 0.0, true, juce::ModifierKeys::commandModifier);
         setMouseDragSensitivity (220);
         setPopupMenuEnabled (false);
+        setWantsKeyboardFocus (true);
     }
+
+    bool keyPressed (const juce::KeyPress& k) override
+    {
+        const int code = k.getKeyCode();
+        const bool up = code == juce::KeyPress::upKey || code == juce::KeyPress::rightKey;
+        const bool down = code == juce::KeyPress::downKey || code == juce::KeyPress::leftKey;
+        if (! up && ! down)
+            return juce::Slider::keyPressed (k);
+        const double range = getMaximum() - getMinimum();
+        double step = std::max (getInterval(), range * (k.getModifiers().isShiftDown() ? 0.001 : 0.01));
+        if (getInterval() >= 1.0) step = getInterval(); // integer / choice-like parameters move one step
+        setValue (getValue() + (up ? step : -step), juce::sendNotificationSync);
+        return true;
+    }
+
+    void focusGained (FocusChangeType) override { repaint(); }
+    void focusLost (FocusChangeType) override { repaint(); }
 
     void setParameter (juce::RangedAudioParameter* p) { param = p; }
 
@@ -51,7 +70,15 @@ private:
         m.addSectionHeader (param->getName (64));
         m.addItem ("Reset to default", [this] { setParam (param->getDefaultValue()); });
         m.addItem ("Randomize", [this] { setParam (juce::Random::getSystemRandom().nextFloat()); });
-        m.addItem ("MIDI Learn (Phase 4)", false, false, nullptr);
+        if (auto* host = findLearnHost())
+        {
+            auto& ml = host->getMidiLearn();
+            const int idx = param->getParameterIndex();
+            const int cc = ml.ccForParam (idx);
+            m.addItem (cc >= 0 ? "MIDI Learn (mapped to CC " + juce::String (cc) + ")" : "MIDI Learn", [&ml, idx] { ml.startLearn (idx); });
+            if (cc >= 0)
+                m.addItem ("Clear MIDI CC", [&ml, idx] { ml.clearParam (idx); });
+        }
         if (onAssignModulation != nullptr)
             m.addItem ("Add modulation slot...", [this] { onAssignModulation(); });
 
@@ -66,6 +93,13 @@ private:
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this));
     }
 
+    MidiLearnHost* findLearnHost()
+    {
+        if (auto* editor = findParentComponentOfClass<juce::AudioProcessorEditor>())
+            return dynamic_cast<MidiLearnHost*> (editor->getAudioProcessor());
+        return nullptr;
+    }
+
     void setParam (float normalised)
     {
         param->beginChangeGesture();
@@ -76,9 +110,33 @@ private:
     juce::RangedAudioParameter* param = nullptr;
 };
 
-class ParamKnob final : public juce::Component
+class ParamKnob final : public juce::Component, public juce::DragAndDropTarget
 {
 public:
+    /** Called with a ModSource index when a modulation chip is dropped on this knob. */
+    std::function<void (int source)> onModulationDropped;
+
+    bool isInterestedInDragSource (const SourceDetails& d) override
+    {
+        return modDest > 0 && d.description.toString().startsWith ("modsrc:");
+    }
+    void itemDragEnter (const SourceDetails&) override { dropHover = true; repaint(); }
+    void itemDragExit (const SourceDetails&) override { dropHover = false; repaint(); }
+    void itemDropped (const SourceDetails& d) override
+    {
+        dropHover = false;
+        repaint();
+        if (onModulationDropped)
+            onModulationDropped (d.description.toString().fromFirstOccurrenceOf (":", false, false).getIntValue());
+    }
+    void paintOverChildren (juce::Graphics& g) override
+    {
+        if (dropHover)
+            drawCornerBrackets (g, getLocalBounds().toFloat().reduced (1.0f), colours::lime, 10.0f, 2.0f);
+        if (slider.hasKeyboardFocus (false))
+            drawCornerBrackets (g, getLocalBounds().toFloat().reduced (1.0f), colours::text, 6.0f, 1.0f);
+    }
+
     /** Mod-matrix destination this knob represents (0 = none) and how one unit of
         modulation maps onto the knob's travel (used to draw the depth arc). */
     void setModTarget (int destination, float travelPerUnit) { modDest = destination; modTravel = travelPerUnit; }
@@ -152,6 +210,42 @@ private:
     std::unique_ptr<APVTS::SliderAttachment> attachment;
     int modDest = 0;
     float modTravel = 1.0f;
+    bool dropHover = false;
+};
+
+/** Draggable modulation-source chip: drop it on any modulatable knob to create a matrix slot. */
+class ModSourceChip final : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    ModSourceChip (int sourceIndex, juce::String name, juce::Colour c) : source (sourceIndex), label (std::move (name)), accent (c)
+    {
+        setTooltip ("Drag onto a knob to modulate it with " + label);
+        setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+    }
+    void paint (juce::Graphics& g) override
+    {
+        auto r = getLocalBounds().toFloat().reduced (1.0f);
+        g.setColour (accent.withAlpha (isMouseOver() ? 0.35f : 0.18f));
+        g.fillPath (chamferedRect (r, 5.0f));
+        g.setColour (accent);
+        g.strokePath (chamferedRect (r, 5.0f), juce::PathStrokeType (1.0f));
+        drawLed (g, { r.getX() + 9.0f, r.getCentreY() }, 3.0f, accent, true);
+        g.setFont (fonts::mono (10.0f));
+        g.drawText ("DRAG " + label, r.withTrimmedLeft (16.0f), juce::Justification::centredLeft);
+    }
+    void mouseDrag (const juce::MouseEvent&) override
+    {
+        if (auto* c = juce::DragAndDropContainer::findParentDragContainerFor (this))
+            if (! c->isDragAndDropActive())
+                c->startDragging ("modsrc:" + juce::String (source), this);
+    }
+    void mouseEnter (const juce::MouseEvent&) override { repaint(); }
+    void mouseExit (const juce::MouseEvent&) override { repaint(); }
+
+private:
+    int source;
+    juce::String label;
+    juce::Colour accent;
 };
 
 /** Thin horizontal light-bar slider (mod-matrix amounts etc.). */

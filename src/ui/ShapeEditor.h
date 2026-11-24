@@ -18,7 +18,7 @@ public:
         : assets (a), index (shapeIndex), accent (c), title (std::move (label))
     {
         shape = assets.shapes.get (index);
-        startTimerHz (10);
+        startTimerHz (GlobalSettings::get().fps (10));
     }
 
     /** Optional playhead in 0..1 supplier (e.g. GUI-side free-running estimate). */

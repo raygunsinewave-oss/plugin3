@@ -1,13 +1,16 @@
 #pragma once
 
 #include "PluginProcessor.h"
+#include <juce_opengl/juce_opengl.h>
+
 #include "ui/FxPage.h"
+#include "ui/SystemPages.h"
 #include "ui/Sections.h"
 
 namespace mbx
 {
 /** SYNTH tab: oscillators, mixer/voice, two filters, and the modulation section. */
-class SynthPage final : public juce::Component, private juce::Timer
+class SynthPage final : public juce::Component, public juce::DragAndDropContainer, private juce::Timer
 {
 public:
     explicit SynthPage (MysteryBoxProcessor& p);
@@ -72,8 +75,9 @@ private:
     double startMs = juce::Time::getMillisecondCounterHiRes();
 };
 
-/** Fixed 1280x800 design surface, scaled as a whole (75%..200%) so the UI stays vector-sharp. */
-class MysteryBoxEditor final : public juce::AudioProcessorEditor
+/** Fixed 1280x800 design surface, scaled as a whole (75%..200%) so the UI stays vector-sharp.
+    All child UI lives in a rebuildable bundle so theme / animation / GPU changes apply instantly. */
+class MysteryBoxEditor final : public juce::AudioProcessorEditor, public juce::KeyListener
 {
 public:
     explicit MysteryBoxEditor (MysteryBoxProcessor&);
@@ -82,6 +86,8 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent&) override;
+    bool keyPressed (const juce::KeyPress&, juce::Component*) override;
+    bool keyStateChanged (bool isKeyDown, juce::Component*) override;
 
     static constexpr int kBaseWidth = 1280, kBaseHeight = 800;
     static constexpr int kTopBarHeight = 56, kStatusHeight = 22;
@@ -89,6 +95,9 @@ public:
 private:
     void showTab (int index);
     void rebuildBackground();
+    void buildUi();
+    void layoutUi();
+    void applyGpu();
 
     class Content final : public juce::Component
     {
@@ -99,20 +108,16 @@ private:
     };
     void paintContent (juce::Graphics&);
 
+    struct Ui;
     MysteryBoxProcessor& proc;
     ui::NeonLookAndFeel lnf;
     Content content { *this };
-    juce::TooltipWindow tooltips { this, 500 };
-
-    TopBar topBar;
-    StatusBar statusBar;
-    SynthPage synthPage;
-    ui::FxPage fxPage;
-    ui::StereoMeter slimMeter;
-    PlannedPage presetsPage, advancedPage, xdPage, settingsPage;
-    std::array<juce::Component*, 6> pages {};
+    std::unique_ptr<juce::TooltipWindow> tooltips;
+    std::unique_ptr<Ui> uiParts;
+    std::unique_ptr<juce::OpenGLContext> gl;
     juce::Image background;
-    int currentTab = 0;
+    int currentTab = 0, keyboardOctave = 4;
+    std::array<bool, 13> qwertyDown {};
 };
 
 } // namespace mbx

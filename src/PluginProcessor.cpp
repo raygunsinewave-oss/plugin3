@@ -16,6 +16,9 @@ MysteryBoxProcessor::MysteryBoxProcessor()
                           params::id::seqRate, params::id::seqSwing, params::id::seqFollow, params::id::midiOut };
     for (size_t i = 0; i < arpP.size(); ++i)
         arpP[i] = apvts.getRawParameterValue (ids[i]);
+    dcBlockParam = apvts.getRawParameterValue (params::id::dcBlock);
+    if (auto* osParam = apvts.getParameter (params::id::oversampling)) // user default for new instances
+        osParam->setValueNotifyingHost (osParam->convertTo0to1 ((float) juce::jlimit (0, 3, GlobalSettings::get().defaultOversampling())));
     engine.prepare (&wavetables, 48000.0f, 48000.0f * 8.0f);
 }
 
@@ -180,6 +183,7 @@ void MysteryBoxProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         settings.osc[(size_t) o].userTable = assets.userTables[(size_t) o].get();
         settings.osc[(size_t) o].sample    = assets.samples[(size_t) o].get();
     }
+    settings.tuning = tuning.offsets();
     engine.setTarget (settings);
     assets.sequence.readIfChanged (audioPattern, patternVersion);
 
@@ -218,6 +222,8 @@ void MysteryBoxProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     {
         const auto m = meta.getMessage();
         const int pos = juce::jlimit (0, numSamples - 1, meta.samplePosition);
+        if (m.isController() && midiLearn.handleCc (m.getControllerNumber(), m.getControllerValue()))
+            continue; // mapped CCs drive parameters instead of the engine
         if (arp.mode != dsp::ArpMode::Off && (m.isNoteOn() || m.isNoteOff()) && nIn < (int) inNotes.size())
             inNotes[(size_t) nIn++] = { pos, m.isNoteOn(), m.getNoteNumber(), m.getFloatVelocity(), m.getChannel() - 1 };
         else
@@ -274,7 +280,53 @@ void MysteryBoxProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     ctx.ppq = ppq;
     ctx.sideL = sl;
     ctx.sideR = sr;
+    {
+        // global modulation of FX mixes / sends (macros, mod wheel, aftertouch, pitch bend, seq lanes)
+        std::array<float, FxRack::kTotalSlots> offs {};
+        const auto& perf = engine.getPerformance();
+        auto globalSource = [&] (int src, bool& ok) -> float {
+            ok = true;
+            if (src >= (int) dsp::ModSource::Macro1 && src <= (int) dsp::ModSource::Macro8) return settings.macros[(size_t) (src - (int) dsp::ModSource::Macro1)];
+            switch ((dsp::ModSource) src)
+            {
+                case dsp::ModSource::ModWheel:   return perf.modWheel;
+                case dsp::ModSource::Aftertouch: return perf.aftertouch;
+                case dsp::ModSource::PitchBend:  return perf.pitchBend;
+                case dsp::ModSource::SeqLane1:   return perf.seqLanes[0];
+                case dsp::ModSource::SeqLane2:   return perf.seqLanes[1];
+                case dsp::ModSource::None: case dsp::ModSource::Env1: case dsp::ModSource::Env2: case dsp::ModSource::Env3:
+                case dsp::ModSource::Env4: case dsp::ModSource::Mseg: case dsp::ModSource::Lfo1: case dsp::ModSource::Lfo2:
+                case dsp::ModSource::Lfo3: case dsp::ModSource::Lfo4: case dsp::ModSource::Lfo5: case dsp::ModSource::Lfo6:
+                case dsp::ModSource::Velocity: case dsp::ModSource::Keytrack: case dsp::ModSource::Random:
+                case dsp::ModSource::Macro1: case dsp::ModSource::Macro2: case dsp::ModSource::Macro3: case dsp::ModSource::Macro4:
+                case dsp::ModSource::Macro5: case dsp::ModSource::Macro6: case dsp::ModSource::Macro7: case dsp::ModSource::Macro8:
+                case dsp::ModSource::MpePressure: case dsp::ModSource::MpeSlide: case dsp::ModSource::MpeGlide:
+                case dsp::ModSource::Count:
+                default: ok = false; return 0.0f; // per-voice sources can't drive the global FX
+            }
+        };
+        for (const auto& slot : settings.matrix)
+            if (slot.isActive() && dsp::dest::isGlobalFx (slot.destination))
+            {
+                bool ok = false, okVia = true;
+                float v = dsp::applyModCurve (globalSource (slot.source, ok), slot.curve) * slot.amount;
+                if (slot.via > 0) v *= globalSource (slot.via, okVia);
+                if (ok && okVia)
+                    offs[(size_t) (slot.destination - dsp::dest::FxMixBase)] += v;
+            }
+        fxRack.setModOffsets (offs);
+    }
     fxRack.process (outL, outR, numSamples, ctx);
+    if (dcBlockParam->load (std::memory_order_relaxed) >= 0.5f) // ~5 Hz one-pole DC blocker
+    {
+        const float a = 1.0f - 2.0f * dsp::kPi * 5.0f / (float) hostSampleRate;
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const float xl = outL[i], xr = outR[i];
+            dcStateL = xl - dcPrevL + a * dcStateL; dcPrevL = xl; outL[i] = dcStateL;
+            dcStateR = xr - dcPrevR + a * dcStateR; dcPrevR = xr; outR[i] = dcStateR;
+        }
+    }
     outMeter.process (outL, outR, numSamples);
 
     scope.push (outL, outR, numSamples);
@@ -311,6 +363,13 @@ void MysteryBoxProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.setProperty ("stateVersion", kStateVersion, nullptr);
     state.removeChild (state.getChildWithName (Assets::kTreeType), nullptr);
     state.appendChild (assets.toValueTree(), nullptr);
+    state.removeChild (state.getChildWithName ("MBX_MIDIMAP"), nullptr);
+    state.appendChild (midiLearn.toValueTree(), nullptr);
+    state.removeChild (state.getChildWithName ("MBX_TUNING"), nullptr);
+    juce::ValueTree tun ("MBX_TUNING");
+    tun.setProperty ("scl", tuning.getScl(), nullptr);
+    tun.setProperty ("kbm", tuning.getKbm(), nullptr);
+    state.appendChild (tun, nullptr);
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -326,6 +385,15 @@ void MysteryBoxProcessor::setStateInformation (const void* data, int sizeInBytes
             {
                 assets.fromValueTree (extra);
                 tree.removeChild (extra, nullptr);
+            }
+            for (const char* t : { "MBX_MIDIMAP", "MBX_TUNING" })
+            {
+                auto child = tree.getChildWithName (t);
+                if (! child.isValid()) continue;
+                if (child.hasType ("MBX_MIDIMAP")) midiLearn.fromValueTree (child);
+                else if (child["scl"].toString().isNotEmpty()) tuning.load (child["scl"], child["kbm"]);
+                else tuning.reset();
+                tree.removeChild (child, nullptr);
             }
             apvts.replaceState (tree);
             if (juce::MessageManager::existsAndIsCurrentThread())

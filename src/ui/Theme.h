@@ -7,29 +7,74 @@ namespace mbx::ui
 {
 namespace colours
 {
-    inline const juce::Colour base     { 0xff07080d }; // near-black graphite
-    inline const juce::Colour glass    { 0x1a9fdcff }; // smoked glass panel fill
-    inline const juce::Colour glassHi  { 0x26c8f4ff };
-    inline const juce::Colour cyan     { 0xff00f0ff }; // primary accent
-    inline const juce::Colour magenta  { 0xffff2bd6 }; // secondary accent
-    inline const juce::Colour lime     { 0xffb6ff00 }; // active / modulated
-    inline const juce::Colour amber    { 0xffffb020 }; // warnings
-    inline const juce::Colour text     { 0xffd9f7ff };
-    inline const juce::Colour textDim  { 0xff6f8c9c };
-    inline const juce::Colour track    { 0xff1a2230 };
-    inline const juce::Colour screen   { 0xff081019 }; // display background
+    // Mutable so the theme can be switched at runtime (the editor rebuilds its components).
+    inline juce::Colour base     { 0xff07080d }; // near-black graphite
+    inline juce::Colour glass    { 0x1a9fdcff }; // smoked glass panel fill
+    inline juce::Colour glassHi  { 0x26c8f4ff };
+    inline juce::Colour cyan     { 0xff00f0ff }; // primary accent
+    inline juce::Colour magenta  { 0xffff2bd6 }; // secondary accent
+    inline juce::Colour lime     { 0xffb6ff00 }; // active / modulated
+    inline juce::Colour amber    { 0xffffb020 }; // warnings
+    inline juce::Colour text     { 0xffd9f7ff };
+    inline juce::Colour textDim  { 0xff6f8c9c };
+    inline juce::Colour track    { 0xff1a2230 };
+    inline juce::Colour screen   { 0xff081019 }; // display background
 } // namespace colours
+
+/** Themes: 0 Neon Cyan, 1 Magenta Night, 2 Acid Green, 3 Mono, 4 Colorblind-safe (Okabe-Ito). */
+inline const juce::StringArray& themeNames()
+{
+    static const juce::StringArray n { "Neon Cyan", "Magenta Night", "Acid Green", "Mono", "Colorblind Safe" };
+    return n;
+}
+
+inline void applyTheme (int theme)
+{
+    using namespace colours;
+    base = juce::Colour (0xff07080d); text = juce::Colour (0xffd9f7ff); textDim = juce::Colour (0xff6f8c9c);
+    track = juce::Colour (0xff1a2230); screen = juce::Colour (0xff081019);
+    switch (theme)
+    {
+        case 1: // Magenta Night
+            cyan = juce::Colour (0xffff3cac); magenta = juce::Colour (0xff8a5cff); lime = juce::Colour (0xffffd23f); amber = juce::Colour (0xffff7043);
+            base = juce::Colour (0xff0b0610); track = juce::Colour (0xff241628); screen = juce::Colour (0xff130a19); textDim = juce::Colour (0xff9a7f9f);
+            break;
+        case 2: // Acid Green
+            cyan = juce::Colour (0xff39ff88); magenta = juce::Colour (0xff00d0ff); lime = juce::Colour (0xffeaff00); amber = juce::Colour (0xffff9f1c);
+            base = juce::Colour (0xff050a07); track = juce::Colour (0xff132219); screen = juce::Colour (0xff07130c);
+            break;
+        case 3: // Mono
+            cyan = juce::Colour (0xffe8eef2); magenta = juce::Colour (0xffa8b3ba); lime = juce::Colour (0xffffffff); amber = juce::Colour (0xffffc857);
+            text = juce::Colour (0xfff2f5f7); textDim = juce::Colour (0xff7d878d); track = juce::Colour (0xff1c1f22); screen = juce::Colour (0xff0d0f11);
+            break;
+        case 4: // Colorblind safe (Okabe-Ito: sky blue / orange / bluish green / vermillion)
+            cyan = juce::Colour (0xff56b4e9); magenta = juce::Colour (0xffe69f00); lime = juce::Colour (0xff2fd8a8); amber = juce::Colour (0xffd55e00);
+            break;
+        default: // Neon Cyan
+            cyan = juce::Colour (0xff00f0ff); magenta = juce::Colour (0xffff2bd6); lime = juce::Colour (0xffb6ff00); amber = juce::Colour (0xffffb020);
+            break;
+    }
+    glass = cyan.withAlpha ((juce::uint8) 0x1a).interpolatedWith (juce::Colour (0x1a9fdcff), 0.5f);
+    glassHi = cyan.withAlpha ((juce::uint8) 0x26).interpolatedWith (juce::Colour (0x26c8f4ff), 0.5f);
+}
 
 namespace fonts
 {
-    /** Geometric display face for headers (bundled techno font arrives with the Phase 4 UI pass). */
+    juce::Typeface::Ptr displayTypeface(); // Orbitron (OFL), embedded
+    juce::Typeface::Ptr monoTypeface();    // JetBrains Mono (OFL), embedded
+
+    /** Geometric techno display face for headers. */
     inline juce::Font display (float height)
     {
+        if (auto tf = displayTypeface())
+            return juce::Font (juce::FontOptions (tf).withHeight (height * 0.92f)).withExtraKerningFactor (0.08f);
         return juce::Font (juce::FontOptions (height, juce::Font::bold)).withExtraKerningFactor (0.12f);
     }
     /** Monospaced face for values and HUD readouts. */
     inline juce::Font mono (float height)
     {
+        if (auto tf = monoTypeface())
+            return juce::Font (juce::FontOptions (tf).withHeight (height));
         return juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), height, juce::Font::plain));
     }
 } // namespace fonts

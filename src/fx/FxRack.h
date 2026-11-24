@@ -26,6 +26,9 @@ public:
     /** Audio thread. Processes the rack, sends, EQ and output limiter in place. */
     void process (float* L, float* R, int n, const dsp::fx::FxContext& ctx) noexcept;
 
+    /** Audio thread: additive offsets (from global modulation) for slot mixes [0..9] and send levels [10..11]. */
+    void setModOffsets (const std::array<float, kTotalSlots>& offsets) noexcept { modOffsets = offsets; }
+
     dsp::fx::FxType getUnitType (int slot) const noexcept;
     float getActivity (int slot) const noexcept;
 
@@ -67,6 +70,7 @@ private:
     std::vector<float> dryL, dryR, sendL, sendR, accL, accR;
     double rate = 48000.0;
     int blockSize = 512;
+    std::array<float, kTotalSlots> modOffsets {};
 };
 
 //==============================================================================

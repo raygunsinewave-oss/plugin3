@@ -151,7 +151,8 @@ void FxRack::process (float* L, float* R, int n, const FxContext& ctx) noexcept
     {
         auto& s = slots[(size_t) k];
         auto* u = s.unit.load (std::memory_order_acquire);
-        const float target = (u != nullptr && s.on->load (std::memory_order_relaxed) >= 0.5f) ? s.mix->load (std::memory_order_relaxed) : 0.0f;
+        const float target = (u != nullptr && s.on->load (std::memory_order_relaxed) >= 0.5f)
+                                 ? std::clamp (s.mix->load (std::memory_order_relaxed) + modOffsets[(size_t) k], 0.0f, 1.0f) : 0.0f;
         if (u == nullptr || (target <= 0.0f && s.mixSmoothed <= 0.0f))
         {
             s.mixSmoothed = 0.0f;
@@ -181,7 +182,7 @@ void FxRack::process (float* L, float* R, int n, const FxContext& ctx) noexcept
     {
         auto& s = slots[(size_t) k];
         auto* u = s.unit.load (std::memory_order_acquire);
-        const float send = s.send->load (std::memory_order_relaxed);
+        const float send = std::clamp (s.send->load (std::memory_order_relaxed) + modOffsets[(size_t) k], 0.0f, 1.0f);
         const float target = (u != nullptr && s.on->load() >= 0.5f) ? s.mix->load() : 0.0f;
         if (u == nullptr || send <= 0.0f || (target <= 0.0f && s.mixSmoothed <= 0.0f))
         {

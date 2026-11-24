@@ -16,9 +16,12 @@ SynthPage::SynthPage (MysteryBoxProcessor& p)
         for (auto* k : list)
             modKnobs.push_back (k);
     for (auto* k : modKnobs)
+    {
         if (k->slider.onAssignModulation == nullptr)
             k->slider.onAssignModulation = [this, k] { mod.addModulation (k->getModDest()); };
-    startTimerHz (15);
+        k->onModulationDropped = [this, k] (int src) { mod.addModulation (k->getModDest(), src); };
+    }
+    startTimerHz (GlobalSettings::get().fps (15));
 }
 
 void SynthPage::timerCallback()
@@ -100,7 +103,7 @@ TopBar::TopBar (MysteryBoxProcessor& p) : proc (p), miniScope (p.getScope(), tru
     addAndMakeVisible (redoButton);
     addAndMakeVisible (miniScope);
     tabs[0].setToggleState (true, juce::dontSendNotification);
-    startTimerHz (30);
+    startTimerHz (GlobalSettings::get().fps (30));
 }
 
 void TopBar::resized()
@@ -256,58 +259,116 @@ void StatusBar::paint (juce::Graphics& g)
 }
 
 //==============================================================================
-MysteryBoxEditor::MysteryBoxEditor (MysteryBoxProcessor& p)
-    : AudioProcessorEditor (p), proc (p), topBar (p), statusBar (p), synthPage (p), fxPage (p), slimMeter (p.getOutputMeter(), true),
-      presetsPage ("PRESETS", "Arrives in Phase 5",
-                   { "Browser with search, tags, favourites, ratings, recently used", "Random preset + audio preview",
-                     "1,000 factory presets across 10 categories", "User save / tag / export (JSON)" }),
-      advancedPage ("ADVANCED", "Arrives in Phases 3-4",
-                    { "Per-module oversampling + quality", "Analog drift, voice stealing modes, per-voice randomisation",
-                      "Microtuning (.scl/.kbm), MIDI CC table, MPE zone config", "Velocity / keytrack curve editors",
-                      "Full parameter browser with search" }),
-      xdPage ("XD // GAMES", "Arrives in Phase 6",
-              { "25 original games that play the synth", "Tempo sync, scale & key lock, quantize, high scores",
-                "Game outputs as mod-matrix sources", "Performance (auto-play) mode as a generative sequencer" }),
-      settingsPage ("SETTINGS", "Arrives in Phase 4",
-                    { "UI scale + themes (Neon Cyan, Magenta Night, Acid Green, Mono)", "Animation level / Eco GPU mode",
-                      "Quality defaults, MIDI learn management, preset folder", "Tooltips, shortcuts, colorblind-safe palette" })
+struct MysteryBoxEditor::Ui
 {
+    explicit Ui (MysteryBoxProcessor& p)
+        : topBar (p), statusBar (p), synthPage (p), fxPage (p), slimMeter (p.getOutputMeter(), true), advancedPage (p), settingsPage (p),
+          presetsPage ("PRESETS", "Arrives in Phase 5",
+                       { "Browser with search, tags, favourites, ratings, recently used", "Random preset + audio preview",
+                         "1,000 factory presets across 10 categories", "User save / tag / export (JSON)" }),
+          xdPage ("XD // GAMES", "Arrives in Phase 6",
+                  { "25 original games that play the synth", "Tempo sync, scale & key lock, quantize, high scores",
+                    "Game outputs as mod-matrix sources", "Performance (auto-play) mode as a generative sequencer" })
+    {
+    }
+    std::array<juce::Component*, 6> pages() { return { &synthPage, &presetsPage, &fxPage, &advancedPage, &xdPage, &settingsPage }; }
+
+    TopBar topBar;
+    StatusBar statusBar;
+    SynthPage synthPage;
+    ui::FxPage fxPage;
+    ui::StereoMeter slimMeter;
+    ui::AdvancedPage advancedPage;
+    ui::SettingsPage settingsPage;
+    PlannedPage presetsPage, xdPage;
+};
+
+MysteryBoxEditor::MysteryBoxEditor (MysteryBoxProcessor& p)
+    : AudioProcessorEditor (p), proc (p)
+{
+    applyTheme (GlobalSettings::get().theme());
     setLookAndFeel (&lnf);
     addAndMakeVisible (content);
-
-    pages = { &synthPage, &presetsPage, &fxPage, &advancedPage, &xdPage, &settingsPage };
-    for (auto* pg : pages)
-        content.addChildComponent (pg);
-    content.addAndMakeVisible (topBar);
-    content.addAndMakeVisible (statusBar);
-    topBar.onTab = [this] (int i) { showTab (i); };
-    content.addAndMakeVisible (slimMeter);
-    slimMeter.setTooltip ("Output level  //  click for the full meters");
-    slimMeter.onClick = [this] {
-        topBar.tabs[2].setToggleState (true, juce::dontSendNotification);
-        showTab (2);
-        fxPage.showMaster (true);
-    };
-
     content.addMouseListener (this, true); // start an undo transaction per gesture
-    showTab (0);
+    addKeyListener (this);
+    setWantsKeyboardFocus (true);
+    buildUi();
 
     setResizable (true, true);
     setResizeLimits (kBaseWidth * 3 / 4, kBaseHeight * 3 / 4, kBaseWidth * 2, kBaseHeight * 2);
     getConstrainer()->setFixedAspectRatio ((double) kBaseWidth / kBaseHeight);
-    setSize (kBaseWidth, kBaseHeight);
+    const int pct = juce::jlimit (75, 200, GlobalSettings::get().uiScalePercent());
+    setSize (kBaseWidth * pct / 100, kBaseHeight * pct / 100);
+    applyGpu();
 }
 
 MysteryBoxEditor::~MysteryBoxEditor()
 {
+    if (gl != nullptr)
+        gl->detach();
+    removeKeyListener (this);
+    uiParts.reset();
     setLookAndFeel (nullptr);
+}
+
+void MysteryBoxEditor::applyGpu()
+{
+    if (GlobalSettings::get().openGL())
+    {
+        if (gl == nullptr)
+        {
+            gl = std::make_unique<juce::OpenGLContext>();
+            gl->setComponentPaintingEnabled (true);
+            gl->attachTo (*this);
+        }
+    }
+    else if (gl != nullptr)
+    {
+        gl->detach();
+        gl.reset();
+    }
+}
+
+void MysteryBoxEditor::buildUi()
+{
+    applyTheme (GlobalSettings::get().theme());
+    lnf.refreshColours();
+    uiParts.reset();
+    uiParts = std::make_unique<Ui> (proc);
+    auto& u = *uiParts;
+    for (auto* pg : u.pages())
+        content.addChildComponent (pg);
+    content.addAndMakeVisible (u.topBar);
+    content.addAndMakeVisible (u.statusBar);
+    content.addAndMakeVisible (u.slimMeter);
+    u.topBar.onTab = [this] (int i) { showTab (i); };
+    u.slimMeter.setTooltip ("Output level  //  click for the full meters");
+    u.slimMeter.onClick = [this] { showTab (2); uiParts->fxPage.showMaster (true); };
+    u.settingsPage.onNeedsRebuild = [this] {
+        buildUi();
+        applyGpu();
+        showTab (5);
+    };
+    u.settingsPage.onScaleChanged = [this] (int pct) { setSize (kBaseWidth * pct / 100, kBaseHeight * pct / 100); };
+
+    tooltips.reset();
+    if (GlobalSettings::get().tooltips())
+        tooltips = std::make_unique<juce::TooltipWindow> (this, 500);
+    layoutUi();
+    showTab (currentTab);
+    rebuildBackground();
+    repaint();
 }
 
 void MysteryBoxEditor::showTab (int index)
 {
     currentTab = index;
+    if (uiParts == nullptr) return;
+    auto pages = uiParts->pages();
     for (int i = 0; i < 6; ++i)
         pages[(size_t) i]->setVisible (i == index);
+    for (int i = 0; i < 6; ++i)
+        uiParts->topBar.tabs[(size_t) i].setToggleState (i == index, juce::dontSendNotification);
 }
 
 void MysteryBoxEditor::mouseDown (const juce::MouseEvent&)
@@ -315,9 +376,53 @@ void MysteryBoxEditor::mouseDown (const juce::MouseEvent&)
     proc.getUndoManager().beginNewTransaction();
 }
 
+bool MysteryBoxEditor::keyPressed (const juce::KeyPress& key, juce::Component*)
+{
+    if (dynamic_cast<juce::TextEditor*> (juce::Component::getCurrentlyFocusedComponent()) != nullptr)
+        return false;
+    const auto mods = key.getModifiers();
+    if (mods.isCommandDown() && key.getKeyCode() == 'Z') { proc.getUndoManager().undo(); return true; }
+    if (mods.isCommandDown() && key.getKeyCode() == 'Y') { proc.getUndoManager().redo(); return true; }
+    if (mods.isAnyModifierKeyDown()) return false;
+    const auto c = juce::CharacterFunctions::toLowerCase (key.getTextCharacter());
+    if (c == 'z') { keyboardOctave = std::max (0, keyboardOctave - 1); return true; }
+    if (c == 'x') { keyboardOctave = std::min (8, keyboardOctave + 1); return true; }
+    return juce::String ("awsedftgyhujk").containsChar (c); // handled in keyStateChanged
+}
+
+bool MysteryBoxEditor::keyStateChanged (bool, juce::Component*)
+{
+    if (dynamic_cast<juce::TextEditor*> (juce::Component::getCurrentlyFocusedComponent()) != nullptr)
+        return false;
+    static const char keys[] = "awsedftgyhujk";
+    bool used = false;
+    for (int k = 0; k < 13; ++k)
+    {
+        const bool down = juce::KeyPress::isKeyCurrentlyDown (juce::CharacterFunctions::toUpperCase ((juce::juce_wchar) keys[k]));
+        if (down != qwertyDown[(size_t) k])
+        {
+            qwertyDown[(size_t) k] = down;
+            proc.injectNote (12 * (keyboardOctave + 1) + k, 0.8f, down);
+            used = true;
+        }
+    }
+    return used;
+}
+
 void MysteryBoxEditor::paint (juce::Graphics& g)
 {
     g.fillAll (colours::base);
+}
+
+void MysteryBoxEditor::layoutUi()
+{
+    if (uiParts == nullptr) return;
+    auto& u = *uiParts;
+    u.topBar.setBounds (0, 0, kBaseWidth, kTopBarHeight);
+    u.statusBar.setBounds (0, kBaseHeight - kStatusHeight, kBaseWidth, kStatusHeight);
+    for (auto* p : u.pages())
+        p->setBounds (0, kTopBarHeight + 6, kBaseWidth, kBaseHeight - kTopBarHeight - kStatusHeight - 8);
+    u.slimMeter.setBounds (kBaseWidth - 11, kTopBarHeight + 10, 7, kBaseHeight - kTopBarHeight - kStatusHeight - 20);
 }
 
 void MysteryBoxEditor::resized()
@@ -325,13 +430,7 @@ void MysteryBoxEditor::resized()
     const float scale = (float) getWidth() / (float) kBaseWidth;
     content.setBounds (0, 0, kBaseWidth, kBaseHeight);
     content.setTransform (juce::AffineTransform::scale (scale));
-
-    topBar.setBounds (0, 0, kBaseWidth, kTopBarHeight);
-    statusBar.setBounds (0, kBaseHeight - kStatusHeight, kBaseWidth, kStatusHeight);
-    for (auto* p : pages)
-        p->setBounds (0, kTopBarHeight + 6, kBaseWidth, kBaseHeight - kTopBarHeight - kStatusHeight - 8);
-    slimMeter.setBounds (kBaseWidth - 11, kTopBarHeight + 10, 7, kBaseHeight - kTopBarHeight - kStatusHeight - 20);
-
+    layoutUi();
     rebuildBackground();
 }
 

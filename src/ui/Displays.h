@@ -26,7 +26,7 @@ public:
     explicit WaveDisplay (MysteryBoxProcessor& p) : proc (p), state (p.getState()), bank (p.getWavetables())
     {
         drawn.assign (128, 0.0f);
-        startTimerHz (30);
+        startTimerHz (GlobalSettings::get().fps (30));
     }
 
     void setOscillator (int index) { osc = index; repaint(); }
@@ -360,7 +360,7 @@ public:
     FilterDisplay (juce::AudioProcessorValueTreeState& s, int filterIndex) : state (s), index (filterIndex)
     {
         unit.prepare (kRate);
-        startTimerHz (20);
+        startTimerHz (GlobalSettings::get().fps (20));
     }
 
     void paint (juce::Graphics& g) override
@@ -478,7 +478,7 @@ class EnvelopeDisplay final : public juce::Component, private juce::Timer
 public:
     EnvelopeDisplay (juce::AudioProcessorValueTreeState& s, int envIndex, juce::Colour c) : state (s), env (envIndex), accent (c)
     {
-        startTimerHz (20);
+        startTimerHz (GlobalSettings::get().fps (20));
     }
 
     void paint (juce::Graphics& g) override
@@ -552,7 +552,7 @@ private:
 class LfoDisplay final : public juce::Component, private juce::Timer
 {
 public:
-    LfoDisplay (MysteryBoxProcessor& p, int lfoIndex) : proc (p), state (p.getState()), lfo (lfoIndex) { startTimerHz (30); }
+    LfoDisplay (MysteryBoxProcessor& p, int lfoIndex) : proc (p), state (p.getState()), lfo (lfoIndex) { startTimerHz (GlobalSettings::get().fps (30)); }
 
     void paint (juce::Graphics& g) override
     {
@@ -615,7 +615,7 @@ private:
 class ScopeDisplay final : public juce::Component, private juce::Timer
 {
 public:
-    explicit ScopeDisplay (const ScopeTap& t, bool compactStyle = false) : tap (t), compact (compactStyle) { startTimerHz (30); }
+    explicit ScopeDisplay (const ScopeTap& t, bool compactStyle = false) : tap (t), compact (compactStyle) { startTimerHz (GlobalSettings::get().fps (30)); }
 
     void paint (juce::Graphics& g) override
     {

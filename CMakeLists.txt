@@ -24,6 +24,11 @@ else()
     FetchContent_MakeAvailable(juce)
 endif()
 
+# ---------------------------------------------------------------- Embedded resources
+juce_add_binary_data(MysteryBoxData SOURCES
+    resources/fonts/Orbitron.ttf
+    resources/fonts/JetBrainsMono-Regular.ttf)
+
 # ---------------------------------------------------------------- Plugin
 set(MYSTERYBOX_FORMATS VST3 Standalone)
 if(APPLE)
@@ -53,6 +58,8 @@ set(MYSTERYBOX_SOURCES
     src/PluginEditor.cpp
     src/ui/Sections.cpp
     src/ui/FxPage.cpp
+    src/ui/Fonts.cpp
+    src/ui/SystemPages.cpp
     src/params/Parameters.cpp
     src/state/Assets.cpp
     src/dsp/Effects.cpp
@@ -73,7 +80,9 @@ set(MYSTERYBOX_MODULES
     juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_dsp
-    juce::juce_gui_extra)
+    juce::juce_gui_extra
+    juce::juce_opengl
+    MysteryBoxData)
 
 target_link_libraries(MysteryBox
     PRIVATE ${MYSTERYBOX_MODULES}
