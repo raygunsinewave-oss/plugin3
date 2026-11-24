@@ -257,15 +257,10 @@ void StatusBar::paint (juce::Graphics& g)
 
 //==============================================================================
 MysteryBoxEditor::MysteryBoxEditor (MysteryBoxProcessor& p)
-    : AudioProcessorEditor (p), proc (p), topBar (p), statusBar (p), synthPage (p),
+    : AudioProcessorEditor (p), proc (p), topBar (p), statusBar (p), synthPage (p), fxPage (p), slimMeter (p.getOutputMeter(), true),
       presetsPage ("PRESETS", "Arrives in Phase 5",
                    { "Browser with search, tags, favourites, ratings, recently used", "Random preset + audio preview",
                      "1,000 factory presets across 10 categories", "User save / tag / export (JSON)" }),
-      fxPage ("FX RACK", "Arrives in Phase 3",
-              { "10 reorderable slots with bypass / mix / animated displays", "Distortion, OTT, compressor, transient shaper",
-                "Chorus, flanger, phaser, ensemble, delay, reverb (hall/plate/room/shimmer)",
-                "Granular freeze, formant & frequency shift, vocoder bank, EQ, widener, ducker, limiter",
-                "Send buses A/B" }),
       advancedPage ("ADVANCED", "Arrives in Phases 3-4",
                     { "Per-module oversampling + quality", "Analog drift, voice stealing modes, per-voice randomisation",
                       "Microtuning (.scl/.kbm), MIDI CC table, MPE zone config", "Velocity / keytrack curve editors",
@@ -286,6 +281,13 @@ MysteryBoxEditor::MysteryBoxEditor (MysteryBoxProcessor& p)
     content.addAndMakeVisible (topBar);
     content.addAndMakeVisible (statusBar);
     topBar.onTab = [this] (int i) { showTab (i); };
+    content.addAndMakeVisible (slimMeter);
+    slimMeter.setTooltip ("Output level  //  click for the full meters");
+    slimMeter.onClick = [this] {
+        topBar.tabs[2].setToggleState (true, juce::dontSendNotification);
+        showTab (2);
+        fxPage.showMaster (true);
+    };
 
     content.addMouseListener (this, true); // start an undo transaction per gesture
     showTab (0);
@@ -328,6 +330,7 @@ void MysteryBoxEditor::resized()
     statusBar.setBounds (0, kBaseHeight - kStatusHeight, kBaseWidth, kStatusHeight);
     for (auto* p : pages)
         p->setBounds (0, kTopBarHeight + 6, kBaseWidth, kBaseHeight - kTopBarHeight - kStatusHeight - 8);
+    slimMeter.setBounds (kBaseWidth - 11, kTopBarHeight + 10, 7, kBaseHeight - kTopBarHeight - kStatusHeight - 20);
 
     rebuildBackground();
 }

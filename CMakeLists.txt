@@ -52,6 +52,7 @@ set(MYSTERYBOX_SOURCES
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
     src/ui/Sections.cpp
+    src/ui/FxPage.cpp
     src/params/Parameters.cpp
     src/state/Assets.cpp
     src/dsp/Effects.cpp

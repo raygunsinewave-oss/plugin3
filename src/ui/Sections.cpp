@@ -1,4 +1,5 @@
 #include "Sections.h"
+#include "ArpSeqPage.h"
 
 namespace mbx::ui
 {
@@ -729,13 +730,13 @@ namespace
 //==============================================================================
 ModSection::ModSection (MysteryBoxProcessor& p) : proc (p)
 {
-    juce::StringArray names { "ENV 1", "ENV 2", "ENV 3", "ENV 4", "MSEG", "LFO 1", "LFO 2", "LFO 3", "LFO 4", "LFO 5", "LFO 6", "MATRIX", "MACROS" };
+    juce::StringArray names { "ENV 1", "ENV 2", "ENV 3", "ENV 4", "MSEG", "LFO 1", "LFO 2", "LFO 3", "LFO 4", "LFO 5", "LFO 6", "MATRIX", "MACROS", "ARP/SEQ" };
     for (int i = 0; i < names.size(); ++i)
     {
         auto t = std::make_unique<juce::TextButton> (names[i]);
         t->setRadioGroupId (4001);
         t->setClickingTogglesState (true);
-        const auto accent = i < 4 ? colours::magenta : i == 4 ? colours::amber : i < 11 ? colours::lime : colours::cyan;
+        const auto accent = i < 4 || i == 13 ? colours::magenta : i == 4 ? colours::amber : i < 11 ? colours::lime : colours::cyan;
         t->getProperties().set ("accent", (juce::int64) accent.getARGB());
         t->onClick = [this, i] { showTab (i); };
         addAndMakeVisible (*t);
@@ -748,6 +749,7 @@ ModSection::ModSection (MysteryBoxProcessor& p) : proc (p)
         pages.push_back (std::make_unique<LfoPage> (p, l));
     pages.push_back (std::make_unique<MatrixPage> (p.getState()));
     pages.push_back (std::make_unique<MacroPage> (p));
+    pages.push_back (std::make_unique<ArpSeqPage> (p));
     for (auto& pg : pages)
         addChildComponent (*pg);
 
@@ -804,8 +806,8 @@ void ModSection::addModulation (int destination)
 void ModSection::paint (juce::Graphics& g)
 {
     const juce::StringArray titles { "ENV 1  //  AMP", "ENV 2  //  FILTER", "ENV 3", "ENV 4", "MSEG", "LFO 1", "LFO 2", "LFO 3", "LFO 4",
-                                     "LFO 5", "LFO 6", "MOD MATRIX  //  32 SLOTS", "MACROS" };
-    const auto accent = current < 4 ? colours::magenta : current == 4 ? colours::amber : current < 11 ? colours::lime : colours::cyan;
+                                     "LFO 5", "LFO 6", "MATRIX // 32", "MACROS", "ARP / SEQ" };
+    const auto accent = current < 4 || current == 13 ? colours::magenta : current == 4 ? colours::amber : current < 11 ? colours::lime : colours::cyan;
     drawTechPanel (g, getLocalBounds().toFloat(), "", accent, {}, false);
     g.setFont (fonts::mono (9.5f));
     g.setColour (accent.withAlpha (0.7f));
@@ -815,7 +817,7 @@ void ModSection::paint (juce::Graphics& g)
 void ModSection::resized()
 {
     for (size_t i = 0; i < tabs.size(); ++i)
-        tabs[i]->setBounds (14 + (int) i * 72, 7, 68, 20);
+        tabs[i]->setBounds (14 + (int) i * 70, 7, 66, 20);
     for (auto& pg : pages)
         pg->setBounds (14, 32, getWidth() - 28, getHeight() - 40);
 }

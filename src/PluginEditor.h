@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PluginProcessor.h"
+#include "ui/FxPage.h"
 #include "ui/Sections.h"
 
 namespace mbx
@@ -106,7 +107,9 @@ private:
     TopBar topBar;
     StatusBar statusBar;
     SynthPage synthPage;
-    PlannedPage presetsPage, fxPage, advancedPage, xdPage, settingsPage;
+    ui::FxPage fxPage;
+    ui::StereoMeter slimMeter;
+    PlannedPage presetsPage, advancedPage, xdPage, settingsPage;
     std::array<juce::Component*, 6> pages {};
     juce::Image background;
     int currentTab = 0;

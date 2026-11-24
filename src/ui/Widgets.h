@@ -83,6 +83,7 @@ public:
         modulation maps onto the knob's travel (used to draw the depth arc). */
     void setModTarget (int destination, float travelPerUnit) { modDest = destination; modTravel = travelPerUnit; }
     int getModDest() const noexcept { return modDest; }
+    void setLabel (const juce::String& text) { label = text; repaint(); }
     float getModTravel() const noexcept { return modTravel; }
 
     void setModulationDisplay (float depth, float live)
