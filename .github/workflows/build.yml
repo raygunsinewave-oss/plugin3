@@ -11,14 +11,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Two macOS runner pools: Apple-Silicon capacity is often exhausted, so an Intel runner
-          # (which cross-compiles the same Universal binary) runs in parallel.
+          # The Intel runner cross-compiles the same Universal (arm64 + x86_64) binary; the Apple-Silicon
+          # pool never acquired a machine for this account.
           - name: macOS (Universal, Intel runner)
             os: macos-15-intel
-            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
-            pluginval: https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip
-          - name: macOS (Universal, ARM runner)
-            os: macos-15
             cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
             pluginval: https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip
           - name: Windows (x64)

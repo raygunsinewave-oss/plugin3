@@ -130,6 +130,8 @@ public:
 
     /** Notes injected from the UI (on-screen keyboard, XD games). Thread-safe, lock-free (single producer). */
     void injectNote (int note, float velocity, bool on) noexcept;
+    /** XD games' Mod Out values (GUI thread -> audio thread, lock-free). */
+    void setGameMod (int index, float value) noexcept { gameMods[(size_t) (index & 3)].store (juce::jlimit (0.0f, 1.0f, value), std::memory_order_relaxed); }
 
     static constexpr int kStateVersion = 4;
 
@@ -184,6 +186,7 @@ private:
     std::array<std::atomic<float>, (size_t) dsp::dest::Count> liveMod {};
     std::array<std::atomic<float>, dsp::kNumLfos> liveLfo {};
     std::atomic<float> outputPeak { 0.0f };
+    std::array<std::atomic<float>, 4> gameMods {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MysteryBoxProcessor)
 };

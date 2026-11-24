@@ -175,3 +175,44 @@ MBX_TEST (preset_capture_apply_round_trips)
     }
     MBX_CHECK (b.getAssets().getMacroName (0) == "BRIGHTNESS");
 }
+
+//==============================================================================
+#include "../src/games/Game.h"
+
+MBX_TEST (all_25_games_run_headless_in_performance_mode)
+{
+    MBX_CHECK (games::numGames() == 25);
+    juce::Image canvas (juce::Image::ARGB, 720, 640, true);
+    for (int i = 0; i < games::numGames(); ++i)
+    {
+        games::GameHost host;
+        int notes = 0;
+        host.send = [&notes] (int n, float, bool on) { MBX_CHECK (n >= 0 && n < 128); notes += on ? 1 : 0; };
+        auto game = games::createGame (i);
+        MBX_CHECK (game != nullptr, "game %d", i);
+        game->host = &host;
+        game->reset();
+        double beat = 0.0;
+        int lastSixteenth = -1, maxScore = 0;
+        for (int frame = 0; frame < 60 * 40; ++frame) // 40 s of game time at 60 fps, 120 BPM
+        {
+            const float dt = 1.0f / 60.0f;
+            beat += dt * 2.0;
+            host.advance (beat);
+            const int s = (int) std::floor (beat * 4.0);
+            if (s != lastSixteenth) { lastSixteenth = s; game->tick (s % 64); }
+            game->autoplay (dt);
+            game->update (dt);
+            maxScore = std::max (maxScore, game->score);
+            for (float m : game->mods) MBX_CHECK (std::isfinite (m) && m >= -0.01f && m <= 1.01f, "%s mod %f", game->name(), m);
+            if (frame % 120 == 0)
+            {
+                juce::Graphics g (canvas);
+                game->draw (g, { 0.0f, 0.0f, 720.0f, 640.0f });
+            }
+        }
+        host.allOff();
+        std::printf ("         %-18s notes %4d  score %6d\n", game->name(), notes, maxScore);
+        MBX_CHECK (notes > 0, "%s never made a sound in performance mode", game->name());
+    }
+}

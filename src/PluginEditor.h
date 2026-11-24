@@ -6,6 +6,7 @@
 #include "ui/FxPage.h"
 #include "ui/SystemPages.h"
 #include "ui/PresetsPage.h"
+#include "ui/XdPage.h"
 #include "ui/Sections.h"
 
 namespace mbx

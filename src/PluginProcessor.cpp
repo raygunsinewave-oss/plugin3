@@ -197,6 +197,8 @@ void MysteryBoxProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
                     ppq = *p;
         }
     engine.setTransport ((float) bpm, ppq);
+    engine.setGameMods ({ gameMods[0].load (std::memory_order_relaxed), gameMods[1].load (std::memory_order_relaxed),
+                          gameMods[2].load (std::memory_order_relaxed), gameMods[3].load (std::memory_order_relaxed) });
     hostBpm.store (bpm, std::memory_order_relaxed);
 
     // ---------------------------------------------------------------- MIDI: UI notes, arp / sequencer
@@ -294,6 +296,8 @@ void MysteryBoxProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
                 case dsp::ModSource::PitchBend:  return perf.pitchBend;
                 case dsp::ModSource::SeqLane1:   return perf.seqLanes[0];
                 case dsp::ModSource::SeqLane2:   return perf.seqLanes[1];
+                case dsp::ModSource::Game1: case dsp::ModSource::Game2: case dsp::ModSource::Game3: case dsp::ModSource::Game4:
+                    return perf.gameMods[(size_t) (src - (int) dsp::ModSource::Game1)];
                 case dsp::ModSource::None: case dsp::ModSource::Env1: case dsp::ModSource::Env2: case dsp::ModSource::Env3:
                 case dsp::ModSource::Env4: case dsp::ModSource::Mseg: case dsp::ModSource::Lfo1: case dsp::ModSource::Lfo2:
                 case dsp::ModSource::Lfo3: case dsp::ModSource::Lfo4: case dsp::ModSource::Lfo5: case dsp::ModSource::Lfo6:

@@ -80,6 +80,7 @@ struct PerformanceState
     float bpm = 120.0f;
     std::array<double, kNumLfos> lfoFreeCycles {};
     std::array<float, 2> seqLanes {};
+    std::array<float, 4> gameMods {};
 };
 
 /** Which oscillator raw signals are needed and in which order to render them (per block). */
@@ -285,6 +286,8 @@ public:
         src[(size_t) ModSource::MpeGlide]    = perf.chBend[(size_t) channel];
         src[(size_t) ModSource::SeqLane1]    = perf.seqLanes[0];
         src[(size_t) ModSource::SeqLane2]    = perf.seqLanes[1];
+        for (int k = 0; k < 4; ++k)
+            src[(size_t) ModSource::Game1 + (size_t) k] = perf.gameMods[(size_t) k];
 
         // ---------------------------------------------------------------- matrix
         std::array<float, (size_t) dest::Count> d {};
@@ -783,6 +786,7 @@ public:
     }
     void setTimbre (float v, int channel = 0) noexcept { perf.chTimbre[(size_t) (channel & 15)] = v; }
     void setSeqLanes (float a, float b) noexcept { perf.seqLanes = { a, b }; }
+    void setGameMods (const std::array<float, 4>& m) noexcept { perf.gameMods = m; }
 
     void allNotesOff() noexcept
     {

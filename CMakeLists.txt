@@ -62,6 +62,10 @@ set(MYSTERYBOX_SOURCES
     src/ui/Fonts.cpp
     src/ui/SystemPages.cpp
     src/ui/PresetsPage.cpp
+    src/ui/XdPage.cpp
+    src/games/GamesA.cpp
+    src/games/GamesB.cpp
+    src/games/GamesC.cpp
     src/params/Parameters.cpp
     src/state/Assets.cpp
     src/state/PresetManager.cpp

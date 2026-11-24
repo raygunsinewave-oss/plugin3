@@ -284,9 +284,7 @@ struct MysteryBoxEditor::Ui
     explicit Ui (MysteryBoxProcessor& p)
         : topBar (p), statusBar (p), synthPage (p), fxPage (p), slimMeter (p.getOutputMeter(), true), advancedPage (p), settingsPage (p),
           presetsPage (p),
-          xdPage ("XD // GAMES", "Arrives in Phase 6",
-                  { "25 original games that play the synth", "Tempo sync, scale & key lock, quantize, high scores",
-                    "Game outputs as mod-matrix sources", "Performance (auto-play) mode as a generative sequencer" })
+          xdPage (p)
     {
     }
     std::array<juce::Component*, 6> pages() { return { &synthPage, &presetsPage, &fxPage, &advancedPage, &xdPage, &settingsPage }; }
@@ -299,7 +297,7 @@ struct MysteryBoxEditor::Ui
     ui::AdvancedPage advancedPage;
     ui::SettingsPage settingsPage;
     ui::PresetsPage presetsPage;
-    PlannedPage xdPage;
+    ui::XdPage xdPage;
 };
 
 MysteryBoxEditor::MysteryBoxEditor (MysteryBoxProcessor& p)
