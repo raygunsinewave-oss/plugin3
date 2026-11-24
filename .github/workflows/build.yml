@@ -1,0 +1,79 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (Universal)
+            os: macos-14
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+            pluginval: https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip
+          - name: Windows (x64)
+            os: windows-latest
+            cmake_args: -A x64
+            pluginval: https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Windows.zip
+          - name: Linux (x64)
+            os: ubuntu-24.04
+            cmake_args: -G Ninja
+            pluginval: https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Linux.zip
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    env:
+      MBX_SKIP_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libasound2-dev libx11-dev libxext-dev libxrandr-dev \
+            libxinerama-dev libxcursor-dev libxcomposite-dev libgl1-mesa-dev libfreetype-dev \
+            libfontconfig1-dev xvfb
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_args }}
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Unit tests
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; fi
+          BIN=$(find build -type f \( -name MysteryBoxTests -o -name MysteryBoxTests.exe \) | head -1)
+          $RUN "$BIN"
+
+      - name: pluginval (strictness 10)
+        shell: bash
+        run: |
+          curl -sSL -o pluginval.zip "${{ matrix.pluginval }}"
+          unzip -q pluginval.zip
+          VST3=$(find build -type d -name "Mystery Box.vst3" | head -1)
+          case "$RUNNER_OS" in
+            macOS)   PV=pluginval.app/Contents/MacOS/pluginval ;;
+            Windows) PV=./pluginval.exe ;;
+            *)       PV="xvfb-run -a ./pluginval" ;;
+          esac
+          $PV --strictness-level 10 --validate-in-process --timeout-ms 600000 "$VST3"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            AU=$(find build -type d -name "Mystery Box.component" | head -1)
+            mkdir -p ~/Library/Audio/Plug-Ins/Components && cp -R "$AU" ~/Library/Audio/Plug-Ins/Components/
+            killall -9 AudioComponentRegistrar || true
+            auval -v aumu MyBx Rygn
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MysteryBox-${{ runner.os }}
+          path: |
+            build/**/Release/VST3
+            build/**/Release/AU
+            build/**/Release/Standalone
