@@ -56,7 +56,7 @@ std::vector<float> renderOsc (OscSettings s, float hz, int n)
     osc.noteOn (s);
     std::vector<float> l ((size_t) n, 0.0f), r ((size_t) n, 0.0f);
     for (int pos = 0; pos < n; pos += 64)
-        osc.render (s, hz, kSr, l.data() + pos, r.data() + pos, std::min (64, n - pos));
+        osc.render (s, hz, kSr, l.data() + pos, r.data() + pos, nullptr, nullptr, false, std::min (64, n - pos));
     return l;
 }
 
@@ -223,8 +223,8 @@ std::unique_ptr<SynthEngine> sineEngine (int polyphony)
     EngineSettings s;
     s.osc[0] = analog (VaShape::Sine);
     s.osc[0].level = 0.8f;
-    s.amp.attack = 0.002f;
-    s.amp.sustain = 1.0f;
+    s.env[0].attack = 0.002f;
+    s.env[0].sustain = 1.0f;
     s.masterGain = 1.0f;
     s.polyphony = polyphony;
     e->setTarget (s);
@@ -297,4 +297,247 @@ MBX_TEST (all_oscillator_types_are_finite_and_bounded)
                 for (float v : renderOsc (s, hz, 4096))
                     MBX_CHECK (std::isfinite (v) && std::abs (v) < 4.0f, "type %d noise %d hz %.0f -> %f", t, nz, hz, v);
         }
+}
+
+//==============================================================================
+// Phase 2: filters, modulation, voice modes
+namespace
+{
+std::vector<float> sineSignal (float hz, int n)
+{
+    std::vector<float> x ((size_t) n);
+    for (int i = 0; i < n; ++i) x[(size_t) i] = 0.5f * std::sin (kTwoPi * hz * (float) i / kSr);
+    return x;
+}
+double rmsOf (const std::vector<float>& x, size_t from = 0)
+{
+    double s = 0.0;
+    for (size_t i = from; i < x.size(); ++i) s += (double) x[i] * x[i];
+    return std::sqrt (s / (double) (x.size() - from));
+}
+std::vector<float> runFilter (FilterType type, float cutoff, float res, std::vector<float> x, float drive = 0.0f)
+{
+    FilterUnit f;
+    f.prepare (kSr);
+    FilterSettings s;
+    s.type = type; s.resonance = res; s.drive = drive;
+    for (size_t pos = 0; pos < x.size(); pos += 32)
+        f.process (s, cutoff, cutoff, nullptr, x.data() + pos, nullptr, (int) std::min<size_t> (32, x.size() - pos), kSr);
+    return x;
+}
+} // namespace
+
+MBX_TEST (lowpass_and_highpass_separate_bands)
+{
+    const auto hi = sineSignal (8000.0f, 9600), lo = sineSignal (100.0f, 9600);
+    const double in = rmsOf (hi, 4800);
+    for (auto t : { FilterType::LP12, FilterType::LP24, FilterType::Ladder, FilterType::Diode })
+    {
+        const double att = 20.0 * std::log10 (rmsOf (runFilter (t, 500.0f, 0.1f, hi), 4800) / in);
+        const double pass = 20.0 * std::log10 (rmsOf (runFilter (t, 500.0f, 0.1f, lo), 4800) / rmsOf (lo, 4800));
+        std::printf ("         %-12s 8 kHz through 500 Hz LP: %6.1f dB, 100 Hz: %5.1f dB\n", kFilterTypeNames[(int) t], att, pass);
+        MBX_CHECK (att < -24.0, "%s only attenuates %.1f dB", kFilterTypeNames[(int) t], att);
+        MBX_CHECK (pass > -6.0, "%s passband %.1f dB", kFilterTypeNames[(int) t], pass);
+    }
+    const double hpAtt = 20.0 * std::log10 (rmsOf (runFilter (FilterType::HP24, 4000.0f, 0.1f, lo), 4800) / rmsOf (lo, 4800));
+    MBX_CHECK (hpAtt < -40.0, "HP24 lets 100 Hz through at %.1f dB", hpAtt);
+}
+
+MBX_TEST (every_filter_type_is_stable_at_extreme_settings)
+{
+    Rng rng (7);
+    std::vector<float> noise (24000);
+    for (auto& v : noise) v = rng.bipolar();
+    std::vector<float> fm (32);
+    for (int t = 0; t <= (int) FilterType::Acid; ++t)
+        for (float cutoff : { 30.0f, 1000.0f, 20000.0f })
+        {
+            FilterUnit f;
+            f.prepare (kSr);
+            FilterSettings s;
+            s.type = (FilterType) t; s.resonance = 1.0f; s.drive = 1.0f; s.fmAmount = 1.0f;
+            auto x = noise;
+            for (size_t pos = 0; pos < x.size(); pos += 32)
+            {
+                for (auto& v : fm) v = rng.bipolar();
+                f.process (s, cutoff, cutoff * 0.5f, fm.data(), x.data() + pos, nullptr, 32, kSr);
+            }
+            for (float v : x)
+                MBX_CHECK (std::isfinite (v) && std::abs (v) < 12.0f, "%s @ %.0f Hz -> %f", kFilterTypeNames[t], cutoff, v);
+        }
+}
+
+MBX_TEST (svf_self_oscillates_at_full_resonance)
+{
+    std::vector<float> x (48000, 0.0f);
+    x[0] = 1.0f;
+    const auto y = runFilter (FilterType::LP12, 1000.0f, 1.0f, x);
+    const double tail = rmsOf (y, 40000);
+    MBX_CHECK (tail > 0.01, "resonance decayed to %.5f rms after 0.8 s", tail);
+}
+
+MBX_TEST (lfo_tempo_sync_matches_host_tempo)
+{
+    LfoSettings s;
+    s.sync = true;
+    s.division = 11; // 1/4 note
+    Lfo lfo;
+    lfo.noteOn (s, 1);
+    const float hz = syncDivisionHz (s.division, 120.0f);
+    MBX_CHECK (std::abs (hz - 2.0f) < 1.0e-4f, "1/4 at 120 BPM = %.4f Hz", hz);
+    s.shape = LfoShape::SawUp;
+    int wraps = 0;
+    float prev = -2.0f;
+    for (int c = 0; c < 1875; ++c) // 1.25 s: two full cycles, no wrap on the boundary
+    {
+        const float v = lfo.advance (s, nullptr, hz, 0.0, 1, 32, kSr);
+        if (v < prev - 1.0f) ++wraps;
+        prev = v;
+    }
+    MBX_CHECK (wraps == 2, "%d cycles in 1.25 s", wraps);
+}
+
+MBX_TEST (shape_evaluates_curves_and_endpoints)
+{
+    auto s = Shape::make ({ { 0, 0, 0 }, { 0.5f, 1, 0 }, { 1, 0, 0.8f } });
+    MBX_CHECK (std::abs (s.evaluate (0.25f) - 0.5f) < 1e-4f);
+    MBX_CHECK (std::abs (s.evaluate (0.5f) - 1.0f) < 1e-4f);
+    MBX_CHECK (s.evaluate (0.75f) < 0.4f, "curved segment should fall fast: %.3f", s.evaluate (0.75f));
+    MBX_CHECK (std::abs (s.evaluate (1.0f)) < 1e-4f);
+}
+
+namespace
+{
+std::unique_ptr<SynthEngine> engineWith (EngineSettings s)
+{
+    auto e = std::make_unique<SynthEngine>();
+    e->prepare (&bank(), kSr, kSr);
+    e->setTarget (s);
+    return e;
+}
+EngineSettings sineSettings()
+{
+    EngineSettings s;
+    s.osc[0] = analog (VaShape::Sine);
+    s.osc[0].level = 0.8f;
+    s.env[0].attack = 0.002f;
+    s.env[0].sustain = 1.0f;
+    s.masterGain = 1.0f;
+    s.filter[0].dsp.on = false;
+    return s;
+}
+double renderRms (SynthEngine& e, int n)
+{
+    std::vector<float> l ((size_t) n), r ((size_t) n);
+    e.render (l.data(), r.data(), n);
+    return rmsOf (l, (size_t) n / 2);
+}
+} // namespace
+
+MBX_TEST (mod_matrix_routes_velocity_to_level)
+{
+    auto s = sineSettings();
+    s.matrix[0] = { (int) ModSource::Velocity, 0, dest::osc (0, dest::Level), -1.0f, 0.0f, false };
+    auto e = engineWith (s);
+    e->noteOn (60, 1.0f);
+    const double silenced = renderRms (*e, 9600);
+    s.matrix[0].bypass = true;
+    auto e2 = engineWith (s);
+    e2->noteOn (60, 1.0f);
+    const double normal = renderRms (*e2, 9600);
+    MBX_CHECK (silenced < normal * 0.01 && normal > 0.05, "modulated %.4f vs bypassed %.4f", silenced, normal);
+}
+
+MBX_TEST (mod_matrix_via_and_macro_scale_amount)
+{
+    auto s = sineSettings();
+    s.osc[0].level = 0.0f;
+    s.matrix[0] = { (int) ModSource::Macro1, (int) ModSource::Macro2, dest::osc (0, dest::Level), 1.0f, 0.0f, false };
+    s.macros[0] = 1.0f;
+    s.macros[1] = 0.0f; // via = 0 -> no modulation
+    auto e = engineWith (s);
+    e->noteOn (60, 1.0f);
+    MBX_CHECK (renderRms (*e, 9600) < 1e-4);
+    s.macros[1] = 1.0f;
+    auto e2 = engineWith (s);
+    e2->noteOn (60, 1.0f);
+    MBX_CHECK (renderRms (*e2, 9600) > 0.05);
+}
+
+MBX_TEST (legato_mode_uses_one_voice_and_glides)
+{
+    auto s = sineSettings();
+    s.voiceMode = VoiceMode::Legato;
+    s.glideTime = 0.1f;
+    s.glideCurve = 0.0f; // linear
+    auto e = engineWith (s);
+    std::vector<float> l (4800), r (4800);
+    e->noteOn (60, 1.0f);
+    e->render (l.data(), r.data(), 4800);
+    e->noteOn (72, 1.0f);
+    e->render (l.data(), r.data(), 2400); // 50 ms into a 100 ms glide
+    const float mid = e->getNewestVoice()->getPitch();
+    MBX_CHECK (e->getActiveVoiceCount() == 1);
+    MBX_CHECK (mid > 63.0f && mid < 69.0f, "pitch half-way through glide = %.2f", mid);
+    e->render (l.data(), r.data(), 4800);
+    MBX_CHECK (std::abs (e->getNewestVoice()->getPitch() - 72.0f) < 0.01f);
+    e->noteOff (72);
+    e->render (l.data(), r.data(), 480);
+    MBX_CHECK (std::abs (e->getNewestVoice()->getPitch() - 60.0f) < 0.01f || e->getNewestVoice()->getPitch() < 72.0f,
+               "falls back to the held key");
+}
+
+MBX_TEST (unison_voice_mode_stacks_voices)
+{
+    auto s = sineSettings();
+    s.voiceMode = VoiceMode::Unison;
+    s.stackVoices = 4;
+    auto e = engineWith (s);
+    std::vector<float> l (256), r (256);
+    e->noteOn (60, 1.0f);
+    e->noteOn (64, 1.0f);
+    e->render (l.data(), r.data(), 256);
+    MBX_CHECK (e->getActiveVoiceCount() == 8, "%d voices", e->getActiveVoiceCount());
+}
+
+MBX_TEST (fm_warp_and_ring_mod_produce_finite_audio)
+{
+    auto s = sineSettings();
+    s.osc[1] = analog (VaShape::Sine);
+    s.osc[1].pitchSemis = 7.0f;
+    s.osc[1].warp = WarpMode::FM;
+    s.osc[1].warpAmount = 0.6f;
+    s.osc[1].modSource = 0;
+    s.osc[2] = s.osc[1];
+    s.osc[2].modSource = 2; // self feedback
+    s.ring = { true, 0, 1, 0.5f, OscRoute::Filter1 };
+    s.sub = { true, SubShape::Square, 1, 0.5f, OscRoute::Filter2 };
+    s.noise = { true, NoiseType::Pink, 0.2f, OscRoute::Bypass };
+    for (int w = 0; w <= (int) WarpMode::Ring; ++w)
+    {
+        s.osc[0].warp = (WarpMode) w;
+        s.osc[0].warpAmount = 0.7f;
+        s.osc[0].modSource = 1;
+        auto e = engineWith (s);
+        std::vector<float> l (4800), r (4800);
+        e->noteOn (48, 1.0f);
+        e->render (l.data(), r.data(), 4800);
+        for (float v : l)
+            MBX_CHECK (std::isfinite (v) && std::abs (v) < 8.0f, "warp %d -> %f", w, v);
+    }
+}
+
+MBX_TEST (granular_plays_a_loaded_sample)
+{
+    SampleData sample;
+    sample.sampleRate = kSr;
+    sample.data.resize (48000);
+    for (size_t i = 0; i < sample.data.size(); ++i) sample.data[i] = std::sin (kTwoPi * 261.6f * (float) i / kSr);
+    auto s = sineSettings();
+    s.osc[0].type = OscType::Granular;
+    s.osc[0].sample = &sample;
+    s.osc[0].wtPosition = 0.3f;
+    auto e = engineWith (s);
+    e->noteOn (60, 1.0f);
+    MBX_CHECK (renderRms (*e, 24000) > 0.02);
 }

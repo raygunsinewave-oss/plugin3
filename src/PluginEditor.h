@@ -1,50 +1,26 @@
 #pragma once
 
 #include "PluginProcessor.h"
-#include "ui/Displays.h"
-#include "ui/Widgets.h"
+#include "ui/Sections.h"
 
 namespace mbx
 {
-/** SYNTH tab: oscillator strip, selected-oscillator editor, amp envelope, master + scope. */
-class SynthPage final : public juce::Component
+/** SYNTH tab: oscillators, mixer/voice, two filters, and the modulation section. */
+class SynthPage final : public juce::Component, private juce::Timer
 {
 public:
     explicit SynthPage (MysteryBoxProcessor& p);
-    void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
-    void selectOscillator (int index);
+    void timerCallback() override; // modulation rings on every knob
 
     MysteryBoxProcessor& proc;
-    juce::AudioProcessorValueTreeState& state;
-
-    std::array<juce::TextButton, params::kNumOscs> oscTabs;
-    std::array<std::unique_ptr<ui::ParamToggle>, params::kNumOscs> oscPower;
-    int selectedOsc = 0;
-
-    ui::WaveDisplay waveDisplay;
-    ui::ParamChoice type { "TYPE" }, shape { "SHAPE" }, table { "TABLE" }, noise { "NOISE" }, octave { "OCTAVE" };
-    ui::ParamKnob coarse { "COARSE", ui::colours::cyan, true }, fine { "FINE", ui::colours::cyan, true },
-        level { "LEVEL" }, pan { "PAN", ui::colours::cyan, true }, phase { "PHASE" }, phaseRand { "RAND" },
-        unison { "UNISON", ui::colours::magenta }, detune { "DETUNE", ui::colours::magenta },
-        blend { "BLEND", ui::colours::magenta }, spread { "SPREAD", ui::colours::magenta },
-        wtPos { "WT POS", ui::colours::lime }, pw { "PW", ui::colours::lime };
-
-    ui::EnvelopeDisplay envDisplay;
-    ui::ParamKnob envDelay { "DELAY", ui::colours::magenta }, envAttack { "ATTACK", ui::colours::magenta },
-        envHold { "HOLD", ui::colours::magenta }, envDecay { "DECAY", ui::colours::magenta },
-        envSustain { "SUSTAIN", ui::colours::magenta }, envRelease { "RELEASE", ui::colours::magenta },
-        envACurve { "A CURVE", ui::colours::magenta, true }, envDCurve { "D CURVE", ui::colours::magenta, true },
-        envRCurve { "R CURVE", ui::colours::magenta, true }, envVel { "VELOCITY", ui::colours::magenta },
-        envPunch { "PUNCH", ui::colours::amber };
-
-    ui::ScopeDisplay scope;
-    ui::ParamKnob master { "MASTER" }, poly { "VOICES" }, bend { "BEND" };
-    ui::ParamChoice oversampling { "OVERSAMPLING" };
-
-    juce::Rectangle<int> oscArea, envArea, masterArea, comingArea;
+    ui::OscSection osc;
+    ui::MixVoiceSection mixVoice;
+    ui::FilterSection filter1, filter2;
+    ui::ModSection mod;
+    std::vector<ui::ParamKnob*> modKnobs;
 };
 
 /** Placeholder for tabs whose features land in later build phases. */
@@ -59,9 +35,44 @@ private:
     juce::StringArray items;
 };
 
+/** Top bar strip with animated sweep, mini scope and output meter. */
+class TopBar final : public juce::Component, private juce::Timer
+{
+public:
+    explicit TopBar (MysteryBoxProcessor& p);
+    void paint (juce::Graphics&) override;
+    void paintOverChildren (juce::Graphics&) override;
+    void resized() override;
+
+    std::array<juce::TextButton, 6> tabs;
+    juce::TextButton undoButton { "UNDO" }, redoButton { "REDO" };
+    std::function<void (int)> onTab;
+
+private:
+    void timerCallback() override;
+    MysteryBoxProcessor& proc;
+    ui::ScopeDisplay miniScope;
+    float sweep = 0.0f, meter = 0.0f, meterPeak = 0.0f, cpu = 0.0f;
+    int peakHold = 0;
+};
+
+/** Bottom HUD status bar. */
+class StatusBar final : public juce::Component, private juce::Timer
+{
+public:
+    explicit StatusBar (MysteryBoxProcessor& p);
+    void paint (juce::Graphics&) override;
+
+private:
+    void timerCallback() override;
+    MysteryBoxProcessor& proc;
+    int ticks = 0;
+    juce::String hexStream;
+    double startMs = juce::Time::getMillisecondCounterHiRes();
+};
+
 /** Fixed 1280x800 design surface, scaled as a whole (75%..200%) so the UI stays vector-sharp. */
-class MysteryBoxEditor final : public juce::AudioProcessorEditor,
-                               private juce::Timer
+class MysteryBoxEditor final : public juce::AudioProcessorEditor
 {
 public:
     explicit MysteryBoxEditor (MysteryBoxProcessor&);
@@ -72,9 +83,9 @@ public:
     void mouseDown (const juce::MouseEvent&) override;
 
     static constexpr int kBaseWidth = 1280, kBaseHeight = 800;
+    static constexpr int kTopBarHeight = 56, kStatusHeight = 22;
 
 private:
-    void timerCallback() override;
     void showTab (int index);
     void rebuildBackground();
 
@@ -92,10 +103,8 @@ private:
     Content content { *this };
     juce::TooltipWindow tooltips { this, 500 };
 
-    juce::TextButton undoButton { "UNDO" }, redoButton { "REDO" };
-    std::array<juce::TextButton, 6> tabs;
-    juce::Label presetLabel, cpuLabel;
-
+    TopBar topBar;
+    StatusBar statusBar;
     SynthPage synthPage;
     PlannedPage presetsPage, fxPage, advancedPage, xdPage, settingsPage;
     std::array<juce::Component*, 6> pages {};

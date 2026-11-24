@@ -103,6 +103,24 @@ public:
         return va + ff * (vb - va);
     }
 
+    /** Pre-resolved frame pair for a fixed position (hot loop helper). */
+    struct FramePair { const float* a; const float* b; float frac; };
+    FramePair frames (float position, int mip) const noexcept
+    {
+        const float fp = std::clamp (position, 0.0f, 1.0f) * static_cast<float> (numFrames - 1);
+        const int f0   = static_cast<int> (fp);
+        return { mipData (f0, mip), mipData (std::min (f0 + 1, numFrames - 1), mip), fp - static_cast<float> (f0) };
+    }
+    static float readPair (const FramePair& fr, float phase) noexcept
+    {
+        const float idx = phase * static_cast<float> (kSize);
+        const int i0    = std::min (static_cast<int> (idx), kSize - 1);
+        const float fi  = idx - static_cast<float> (i0);
+        const float va  = fr.a[i0] + fi * (fr.a[i0 + 1] - fr.a[i0]);
+        const float vb  = fr.b[i0] + fi * (fr.b[i0 + 1] - fr.b[i0]);
+        return va + fr.frac * (vb - va);
+    }
+
     int getNumFrames() const noexcept { return numFrames; }
     const std::string& getName() const noexcept { return name; }
     bool isEmpty() const noexcept { return data.empty(); }

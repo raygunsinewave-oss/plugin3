@@ -41,43 +41,107 @@ public:
                            juce::Slider& s) override
     {
         const auto accent = accentFor (s);
-        const auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (4.0f);
+        const auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (2.0f);
         const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
         const auto centre = bounds.getCentre();
-        const float ringR = radius - 3.0f;
-        const float angle = startAngle + pos * (endAngle - startAngle);
+        const float ringR = radius - 6.0f;
+        const float range = endAngle - startAngle;
+        const float angle = startAngle + pos * range;
         const bool hover  = s.isMouseOverOrDragging();
+        const bool bipolar = (bool) s.getProperties()["bipolar"];
+        const float from   = bipolar ? (startAngle + endAngle) * 0.5f : startAngle;
 
-        // flat glass body
-        const float bodyR = ringR - 6.0f;
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff1c2533), centre.x, centre.y - bodyR,
-                                                 juce::Colour (0xff0b0f16), centre.x, centre.y + bodyR, false));
+        // outer tick ring (lit up to the value)
+        constexpr int ticks = 25;
+        for (int i = 0; i < ticks; ++i)
+        {
+            const float a = startAngle + range * (float) i / (float) (ticks - 1);
+            const bool lit = a >= juce::jmin (from, angle) - 0.001f && a <= juce::jmax (from, angle) + 0.001f;
+            const float inner = radius - (i % 6 == 0 ? 4.5f : 2.5f);
+            g.setColour (lit ? accent.withAlpha (0.9f) : colours::textDim.withAlpha (0.28f));
+            g.drawLine (juce::Line<float> (centre.getPointOnCircumference (inner, a), centre.getPointOnCircumference (radius - 0.5f, a)), 1.0f);
+        }
+
+        // glass body with segmented inner ring
+        const float bodyR = ringR - 5.0f;
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff1e2836), centre.x, centre.y - bodyR,
+                                                 juce::Colour (0xff090d14), centre.x, centre.y + bodyR, false));
         g.fillEllipse (juce::Rectangle<float> (bodyR * 2, bodyR * 2).withCentre (centre));
-        g.setColour (accent.withAlpha (hover ? 0.5f : 0.22f));
-        g.drawEllipse (juce::Rectangle<float> (bodyR * 2, bodyR * 2).withCentre (centre), 1.0f);
+        for (int seg = 0; seg < 12; ++seg)
+        {
+            juce::Path arc;
+            const float a0 = (float) seg / 12.0f * juce::MathConstants<float>::twoPi;
+            arc.addCentredArc (centre.x, centre.y, bodyR - 2.5f, bodyR - 2.5f, 0.0f, a0 + 0.08f, a0 + 0.42f, true);
+            g.setColour (accent.withAlpha (hover ? 0.35f : 0.14f));
+            g.strokePath (arc, juce::PathStrokeType (1.0f));
+        }
 
-        // track
+        // track + value arc
         juce::Path trackArc;
         trackArc.addCentredArc (centre.x, centre.y, ringR, ringR, 0.0f, startAngle, endAngle, true);
         g.setColour (colours::track);
-        g.strokePath (trackArc, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-        // value ring (bipolar params fill from the centre)
-        const bool bipolar = (bool) s.getProperties()["bipolar"];
-        const float from   = bipolar ? (startAngle + endAngle) * 0.5f : startAngle;
+        g.strokePath (trackArc, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::butt));
         juce::Path valueArc;
         valueArc.addCentredArc (centre.x, centre.y, ringR, ringR, 0.0f, juce::jmin (from, angle), juce::jmax (from, angle), true);
         strokeGlow (g, valueArc, accent, 3.0f, hover ? 1.6f : 1.0f);
 
-        // Phase 2: a second arc (magenta/lime) here will show modulation depth.
+        // modulation depth (static matrix amount) as a second, inner arc
+        const float depth = (float) s.getProperties().getWithDefault ("modDepth", 0.0f);
+        if (std::abs (depth) > 0.001f)
+        {
+            const float end = juce::jlimit (startAngle, endAngle, angle + depth * range);
+            juce::Path modArc;
+            const float mr = ringR - 4.0f;
+            modArc.addCentredArc (centre.x, centre.y, mr, mr, 0.0f, juce::jmin (angle, end), juce::jmax (angle, end), true);
+            strokeGlow (g, modArc, colours::magenta, 2.0f, 0.8f);
+        }
+        // live modulated position (newest voice)
+        const float live = (float) s.getProperties().getWithDefault ("modLive", 0.0f);
+        if (std::abs (live) > 0.0005f)
+        {
+            const float la = juce::jlimit (startAngle, endAngle, angle + live * range);
+            g.setColour (colours::lime);
+            g.fillEllipse (juce::Rectangle<float> (5.0f, 5.0f).withCentre (centre.getPointOnCircumference (ringR, la)));
+        }
 
-        // pointer
+        // pointer + hub
         juce::Path pointer;
-        const float pr = bodyR - 3.0f;
-        pointer.startNewSubPath (centre.getPointOnCircumference (pr * 0.35f, angle));
+        const float pr = bodyR - 2.0f;
+        pointer.startNewSubPath (centre.getPointOnCircumference (pr * 0.3f, angle));
         pointer.lineTo (centre.getPointOnCircumference (pr, angle));
         g.setColour (colours::text);
         g.strokePath (pointer, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour (accent.withAlpha (0.8f));
+        g.fillEllipse (juce::Rectangle<float> (3.0f, 3.0f).withCentre (centre));
+    }
+
+    void drawLinearSlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float, float,
+                           juce::Slider::SliderStyle style, juce::Slider& s) override
+    {
+        if (style != juce::Slider::LinearHorizontal && style != juce::Slider::LinearBar)
+        {
+            LookAndFeel_V4::drawLinearSlider (g, x, y, w, h, pos, 0, 0, style, s);
+            return;
+        }
+        const auto accent = accentFor (s);
+        auto r = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (1.0f, (float) h * 0.28f);
+        g.setColour (colours::track);
+        g.fillRect (r);
+        const bool bipolar = (bool) s.getProperties()["bipolar"];
+        const float cx = bipolar ? r.getCentreX() : r.getX();
+        const float px = juce::jlimit (r.getX(), r.getRight(), pos);
+        auto fill = juce::Rectangle<float>::leftTopRightBottom (juce::jmin (cx, px), r.getY(), juce::jmax (cx, px), r.getBottom());
+        g.setColour (accent.withAlpha (0.25f));
+        g.fillRect (fill.expanded (0.0f, 2.0f));
+        g.setColour (accent);
+        g.fillRect (fill);
+        for (float t = r.getX(); t < r.getRight(); t += 4.0f) // light-bar segmentation
+        {
+            g.setColour (colours::base.withAlpha (0.55f));
+            g.fillRect (t, r.getY(), 1.0f, r.getHeight());
+        }
+        g.setColour (colours::text);
+        g.fillRect (px - 1.0f, r.getY() - 3.0f, 2.0f, r.getHeight() + 6.0f);
     }
 
     void drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce::Colour&, bool over, bool down) override

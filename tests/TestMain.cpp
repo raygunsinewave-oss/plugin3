@@ -28,7 +28,7 @@ void operator delete[] (void* p, std::size_t) noexcept { std::free (p); }
 namespace mbx::test
 {
 int renderDemo (const juce::File& file);                 // ProcessorTests.cpp
-int screenshot (const juce::File& file, int tab, int osc); // ProcessorTests.cpp
+int screenshot (const juce::File& file, int tab, int osc, const juce::String& modTab); // ProcessorTests.cpp
 }
 
 int main (int argc, char** argv)
@@ -40,7 +40,8 @@ int main (int argc, char** argv)
 
     if (argc >= 3 && std::string (argv[1]) == "--screenshot")
         return mbx::test::screenshot (juce::File::getCurrentWorkingDirectory().getChildFile (argv[2]),
-                                      argc >= 4 ? std::atoi (argv[3]) : 0, argc >= 5 ? std::atoi (argv[4]) : 0);
+                                      argc >= 4 ? std::atoi (argv[3]) : 0, argc >= 5 ? std::atoi (argv[4]) : 0,
+                                      argc >= 6 ? juce::String (argv[5]) : juce::String());
 
     const std::string filter = argc >= 2 ? argv[1] : "";
     int passed = 0, failed = 0;

@@ -5,6 +5,7 @@
 
 #include "dsp/SynthEngine.h"
 #include "params/Parameters.h"
+#include "state/Assets.h"
 
 namespace mbx
 {
@@ -83,14 +84,27 @@ public:
     const ScopeTap& getScope() const noexcept { return scope; }
     double getCpuLoad() const { return loadMeasurer.getLoadAsProportion(); }
     int getActiveVoices() const noexcept { return activeVoices.load (std::memory_order_relaxed); }
+    Assets& getAssets() noexcept { return assets; }
+    double getHostBpm() const noexcept { return hostBpm.load (std::memory_order_relaxed); }
+    double getSampleRateHz() const noexcept { return hostSampleRate; }
+    int getOversamplingFactor() const noexcept { return 1 << std::max (0, currentOs); }
 
-    static constexpr int kStateVersion = 1;
+    /** Live modulation of the newest voice, per destination (normalised by dest scale) — UI only. */
+    float getLiveModulation (int destination) const noexcept
+    {
+        return juce::isPositiveAndBelow (destination, dsp::dest::Count) ? liveMod[(size_t) destination].load (std::memory_order_relaxed) : 0.0f;
+    }
+    float getLiveLfo (int lfo) const noexcept { return liveLfo[(size_t) lfo].load (std::memory_order_relaxed); }
+    float getOutputPeak() const noexcept { return outputPeak.load (std::memory_order_relaxed); }
+
+    static constexpr int kStateVersion = 2;
 
 private:
     void handleAsyncUpdate() override;
     void handleMidi (const juce::MidiMessage& m) noexcept;
     void renderRange (float* l, float* r, int start, int end, int factor) noexcept;
 
+    Assets assets; // declared before the APVTS so it outlives parameter listeners
     juce::UndoManager undoManager;
     juce::AudioProcessorValueTreeState apvts;
     params::ParameterCache paramCache;
@@ -102,9 +116,16 @@ private:
     int currentOs = -1;
     double hostSampleRate = 48000.0;
 
+    std::array<dsp::Shape, ShapeStore::kNumShapes> audioShapes {};
+    std::array<uint32_t, ShapeStore::kNumShapes> shapeVersions {};
+
     ScopeTap scope;
     juce::AudioProcessLoadMeasurer loadMeasurer;
     std::atomic<int> activeVoices { 0 };
+    std::atomic<double> hostBpm { 120.0 };
+    std::array<std::atomic<float>, (size_t) dsp::dest::Count> liveMod {};
+    std::array<std::atomic<float>, dsp::kNumLfos> liveLfo {};
+    std::atomic<float> outputPeak { 0.0f };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MysteryBoxProcessor)
 };

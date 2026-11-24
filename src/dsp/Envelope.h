@@ -4,6 +4,8 @@
 
 #include "DspCommon.h"
 
+#include <cstring>
+
 namespace mbx::dsp
 {
 class Envelope
@@ -22,6 +24,9 @@ public:
     /** Call at control rate (every chunk). Cheap. */
     void setParams (const Params& p, float sampleRate) noexcept
     {
+        if (exactlyEqual (sampleRate, cachedRate) && std::memcmp (&p, &params, sizeof (Params)) == 0)
+            return; // unchanged: skip the divisions/exps (called every control chunk)
+        cachedRate = sampleRate;
         params = p;
         const float sr = std::max (1.0f, sampleRate);
         incDelay   = increment (p.delay, 0.0f, sr);
@@ -56,8 +61,10 @@ public:
         value = punchValue = 0.0f;
     }
 
-    float next() noexcept
+    /** Advances one sample, or `steps` samples at once (control-rate use: mod envelopes). */
+    float next (float steps = 1.0f) noexcept
     {
+        stepScale = steps;
         switch (stage)
         {
             case Stage::Idle: return 0.0f;
@@ -94,7 +101,7 @@ public:
                 break;
 
             case Stage::Sustain:
-                value += (params.sustain - value) * sustainCoef; // follows sustain changes smoothly
+                value += (params.sustain - value) * std::min (1.0f, sustainCoef * steps); // follows sustain changes smoothly
                 break;
 
             case Stage::Release:
@@ -108,7 +115,8 @@ public:
                 break;
         }
 
-        punchValue *= punchDecay;
+        if (! exactlyEqual (punchValue, 0.0f))
+            punchValue = exactlyEqual (steps, 1.0f) ? punchValue * punchDecay : punchValue * std::pow (punchDecay, steps);
         return value * (1.0f + punchValue);
     }
 
@@ -126,7 +134,7 @@ private:
 
     bool advance (float inc) noexcept
     {
-        x += inc;
+        x += inc * stepScale;
         return x >= 1.0f;
     }
 
@@ -140,7 +148,7 @@ private:
     Stage stage = Stage::Idle;
     float x = 0.0f, value = 0.0f, startValue = 0.0f, punchValue = 0.0f;
     float incDelay = 1, incAttack = 1, incHold = 1, incDecay = 1, incRelease = 1;
-    float punchDecay = 0.99f, sustainCoef = 0.01f;
+    float punchDecay = 0.99f, sustainCoef = 0.01f, stepScale = 1.0f, cachedRate = -1.0f;
 };
 
 } // namespace mbx::dsp

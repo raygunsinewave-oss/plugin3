@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 
 namespace mbx::dsp
 {
@@ -72,10 +73,47 @@ inline float polyBlamp (float t, float dt) noexcept
     return 0.0f;
 }
 
+/** Exact float comparison for change-detection caches (intentional; avoids -Wfloat-equal noise). */
+inline bool exactlyEqual (float a, float b) noexcept { return std::equal_to<float>() (a, b); }
+
 inline float wrap01 (float p) noexcept
 {
     p -= std::floor (p);
     return p >= 1.0f ? 0.0f : p;
+}
+
+/** Cheap rational tanh approximation (exact at +-3, where it saturates to +-1). */
+inline float fastTanh (float x) noexcept
+{
+    x = std::clamp (x, -3.0f, 3.0f);
+    const float x2 = x * x;
+    return x * (27.0f + x2) / (27.0f + 9.0f * x2);
+}
+
+/** Soft limiter that is transparent below |x| = 1 and bounded to +-2. */
+inline float softLimit (float x) noexcept
+{
+    const float a = std::abs (x);
+    if (a <= 1.0f)
+        return x;
+    const float over = a - 1.0f;
+    return std::copysign (1.0f + over / (1.0f + over), x);
+}
+
+/** Pade approximation of tan(x) for 0 <= x < ~1.45 (used for per-sample filter FM). */
+inline float fastTan (float x) noexcept
+{
+    const float x2 = x * x;
+    return x * (15.0f - x2) / (15.0f - 6.0f * x2);
+}
+
+/** Integer hash -> uniform [-1, 1). Used for stateless, voice-synchronous random LFOs. */
+inline float hashToBipolar (uint64_t v) noexcept
+{
+    v ^= v >> 33; v *= 0xff51afd7ed558ccdULL;
+    v ^= v >> 33; v *= 0xc4ceb9fe1a85ec53ULL;
+    v ^= v >> 33;
+    return static_cast<float> (v >> 40) * (2.0f / 16777216.0f) - 1.0f;
 }
 
 /** -3 dB equal-power pan law. pan in [-1, 1]. */

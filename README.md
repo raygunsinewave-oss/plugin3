@@ -3,10 +3,10 @@
 A 6-oscillator cyberpunk software synthesizer: VST3, AU and Standalone (CLAP planned) for
 Windows 10/11 x64 and macOS 12+ (Universal), built with JUCE 8 / C++20 / CMake.
 
-![SYNTH tab](docs/media/phase1-synth-tab.png)
+![SYNTH tab](docs/media/phase2-synth-tab.png)
 
-> **Status: Phase 1 of 7 complete.** See [docs/ROADMAP.md](docs/ROADMAP.md) for what works now
-> and what is next. A rendered demo is in [docs/media/phase1-demo.wav](docs/media/phase1-demo.wav).
+> **Status: Phase 2 of 7 complete.** See [docs/ROADMAP.md](docs/ROADMAP.md) for what works now
+> and what is next. Rendered demos: [phase 1](docs/media/phase1-demo.wav), [phase 2](docs/media/phase2-demo.wav).
 
 ## Building
 
@@ -63,11 +63,13 @@ cmake --build build
 ./build/MysteryBoxTests_artefacts/Release/MysteryBoxTests
 ```
 
-The suite covers band-limiting and aliasing, pitch accuracy, envelope timing, click-free
-voice stealing, unison level, sample-accurate MIDI, full state round-trip, zero heap
-allocations in `processBlock`, and the CPU budget. Extra modes:
+The suite (31 tests) covers band-limiting and aliasing, pitch accuracy, envelope timing,
+click-free voice stealing, unison level, filter attenuation / stability / self-oscillation,
+LFO tempo sync, mod-matrix routing (incl. via), legato glide, unison stacking, FM/warp
+safety, granular playback, sample-accurate MIDI, parameter + asset state round-trip, zero
+heap allocations in `processBlock` (also with every Phase 2 feature on), and the CPU budget. Extra modes:
 `MysteryBoxTests --render out.wav` writes a demo phrase, and
-`MysteryBoxTests --screenshot out.png [tab] [osc]` writes a 2x UI capture.
+`MysteryBoxTests --screenshot out.png [tab] [osc] [modTab]` writes a 2x UI capture.
 
 CI (`.github/workflows/build.yml`) builds on macOS (Universal), Windows and Linux, runs the
 tests, runs pluginval at strictness 10, and runs auval on macOS.
@@ -78,7 +80,8 @@ tests, runs pluginval at strictness 10, and runs auval on macOS.
 |---|---|
 | `src/dsp/` | JUCE-free, allocation-free DSP: oscillators, wavetables, envelopes, voice engine |
 | `src/params/` | The single parameter table (IDs, ranges, defaults) and lock-free audio-thread cache |
-| `src/ui/` | Theme, neon LookAndFeel, bound widgets, displays |
+| `src/state/` | Non-parameter state: MSEG/LFO shapes (seqlock), imported wavetables and samples (atomic swap), macro names |
+| `src/ui/` | Theme, neon LookAndFeel, bound widgets, displays, shape editor, SYNTH-tab sections |
 | `src/PluginProcessor.*` | Host glue: MIDI, oversampling, state, metering taps |
 | `src/PluginEditor.*` | Scalable 1280x800 vector UI with the 6 top-bar tabs |
 | `tests/` | Unit tests, demo renderer, screenshot tool |
